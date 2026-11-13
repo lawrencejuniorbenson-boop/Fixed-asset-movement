@@ -146,7 +146,7 @@ Requesting Officer, Department Head, AMA Officer, AMA Head, Transport Head/Offic
 2. In **SQL Editor**, run the whole of `supabase_schema.sql`. It is safe to re-run, and it upgrades an older install in place.
 3. In **Authentication → Providers → Email**, keep **Confirm email ON**. Existing staff profiles are linked to a sign-up by email address only after confirmation.
 4. In **Authentication → URL Configuration**, set the **Site URL** to your deployed URL (e.g. your Vercel domain).
-5. The project's public Supabase URL and anon key are built in (`frontend/src/lib/publicConfig.js`). To point at a different project, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel (or `frontend/.env.local` for local dev); they take priority. Never use the service-role key (the publishable/anon key, **never** the service-role key), then redeploy. Without them the site shows a "Supabase is not configured" page.
+5. The project's public Supabase URL and anon key are built in (`frontend/src/lib/publicConfig.js`). To point at a different project, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel (or `frontend/.env.local` for local dev); they take priority (use the anon/publishable key, **never** the service-role key), then redeploy.
 6. For open mode, enable anonymous sign-ins (see *Access modes*) and run the `UPDATE private.settings …` line.
 
 **Upgrading from the previous version:** the old `users.password` column is deleted. Existing staff keep their profile and role, but each must use *Create Account* once with their existing email to set a new password.
