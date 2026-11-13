@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, FileClock, Trash2, CheckCircle2, ArrowRight } from 'lucide-react'
+import {
+  Plus, FileClock, Trash2, CheckCircle2, ArrowRight, Boxes, FileText, Clock, Truck, BadgeCheck, ListChecks
+} from 'lucide-react'
 import { useAuth, errorText } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import api from '../api/client'
-import RequestList from '../components/RequestList'
-import TaskList from '../components/TaskList'
+import RequestTable from '../components/RequestTable'
+import { taskPath } from '../components/TaskList'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import { timeAgo } from '../lib/format'
 import {
@@ -18,14 +20,81 @@ function greeting() {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }
 
-function Stat({ label, value, hint }) {
+const TONES = {
+  blue: { chip: 'bg-blue-50 text-blue-600', label: 'text-blue-700' },
+  amber: { chip: 'bg-amber-50 text-amber-600', label: 'text-amber-700' },
+  sky: { chip: 'bg-sky-50 text-sky-600', label: 'text-sky-700' },
+  green: { chip: 'bg-emerald-50 text-emerald-600', label: 'text-emerald-700' }
+}
+
+function StatCard({ to, icon: Icon, tone, label, value, caption, loading }) {
+  const t = TONES[tone]
   return (
-    <div className="card-flat p-4 sm:p-5">
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
-    </div>
+    <Link to={to} className="card-flat group block p-4 transition hover:border-slate-300 hover:shadow-sm sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <p className={`text-[13px] font-semibold ${t.label}`}>{label}</p>
+        <span className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:flex ${t.chip}`}>
+          <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+        </span>
+      </div>
+      <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900 sm:text-3xl">{loading ? '–' : value}</p>
+      <p className="mt-1 text-xs text-slate-500">{caption}</p>
+    </Link>
   )
+}
+
+// One row per stage: how many requests sit there right now (single-hue bars).
+function Pipeline({ requests, loading }) {
+  const count = (statuses) => requests.filter((r) => statuses.includes(r.status)).length
+  const rows = [
+    { label: 'Department approval', n: count(['pending_head']), tab: 'approval' },
+    { label: 'AMA approval', n: count(['head_approved', 'ama_officer_approved']), tab: 'approval' },
+    { label: 'Awaiting pickup', n: count(['fully_approved']), tab: 'moving' },
+    { label: 'In transit', n: count(['in_transport']), tab: 'moving' },
+    { label: 'Register update', n: count(['transport_completed']), tab: 'done' },
+    { label: 'Closed', n: count(['closed']), tab: 'done', muted: true },
+    { label: 'Rejected', n: count(['rejected']), tab: 'rejected', muted: true }
+  ]
+  const max = Math.max(1, ...rows.map((r) => r.n))
+
+  return (
+    <section className="card-flat flex flex-col" aria-labelledby="pipeline-title">
+      <div className="border-b border-slate-100 px-5 py-4">
+        <h2 id="pipeline-title" className="section-title">Pipeline</h2>
+        <p className="text-xs text-slate-500">Where requests are right now</p>
+      </div>
+      {loading ? (
+        <LoadingSkeleton rows={4} />
+      ) : (
+        <ul className="flex-1 space-y-1 p-3">
+          {rows.map((r) => (
+            <li key={r.label}>
+              <Link
+                to={`/requests?tab=${r.tab}`}
+                className="group grid grid-cols-[8.5rem_1fr_2rem] items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-slate-50"
+                title={`${r.label}: ${r.n} request${r.n === 1 ? '' : 's'}`}
+              >
+                <span className={`truncate text-[13px] ${r.muted ? 'text-slate-500' : 'text-slate-700'}`}>{r.label}</span>
+                <span className="h-2 rounded-full bg-slate-100" aria-hidden="true">
+                  <span
+                    className={`block h-2 rounded-full ${r.muted ? 'bg-slate-300' : 'bg-blue-500'}`}
+                    style={{ width: r.n ? `${Math.max(6, (r.n / max) * 100)}%` : 0 }}
+                  />
+                </span>
+                <span className="text-right text-[13px] font-medium tabular-nums text-slate-900">{r.n}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+const TASK_STEP = {
+  pending_assignment: 'Schedule the move',
+  officer_assigned: 'Record the pickup',
+  in_progress: 'Confirm delivery'
 }
 
 export default function DashboardPage() {
@@ -73,22 +142,53 @@ export default function DashboardPage() {
     }
   }
 
-  const mine = isRequester(user) ? requests : requests.filter((r) => String(r.requesting_officer_id) === String(user?.id))
-  const scope = isRequester(user) ? mine : requests
+  const requester = isRequester(user)
+  const scope = requester ? requests : requests
   const actionable = requests.filter((r) => nextAction(r, user))
   const openTasks = tasks.filter((t) => t.status !== 'completed' && canWorkTask(t, user))
-  const firstName = (user?.name || '').split(' ')[0]
+
+  // Requests and moves that need this person, shown in one table.
+  const todo = [
+    ...actionable.map((r) => ({ ...r, __action: nextAction(r, user).label })),
+    ...openTasks.map((t) => ({
+      ...(t.request || {}),
+      id: `task-${t.id}`,
+      items: t.items || [],
+      movement_date: t.scheduled_date || t.request?.movement_date,
+      __href: taskPath(t),
+      __kind: t.fulfillment_type === 'it' ? 'IT move' : 'Transport move',
+      __action: TASK_STEP[t.status] || 'Open'
+    }))
+  ]
+
+  const counts = {
+    all: scope.length,
+    approval: scope.filter((r) => APPROVAL_STATUSES.includes(r.status)).length,
+    moving: scope.filter((r) => MOVING_STATUSES.includes(r.status)).length,
+    done: scope.filter((r) => ['transport_completed', 'closed'].includes(r.status)).length,
+    rejected: scope.filter((r) => r.status === 'rejected').length
+  }
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="page-title">{greeting()}, {firstName}</h1>
-          <p className="page-subtitle">{roleLabel(user?.role)}{user?.department ? ` · ${user.department}` : ''}</p>
+    <div className="space-y-6">
+      {/* Welcome */}
+      <div className="card flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <Boxes className="h-6 w-6" aria-hidden="true" />
+          </span>
+          <div>
+            <h1 className="text-lg font-semibold text-slate-900 sm:text-xl">Fixed Asset Movement</h1>
+            <p className="text-sm text-slate-500">
+              {greeting()}, <strong className="font-medium text-slate-800">{user?.name}</strong>
+              {user?.department ? ` · ${user.department}` : ''}
+            </p>
+            <span className="badge badge-blue mt-1.5">{roleLabel(user?.role)}</span>
+          </div>
         </div>
         {canCreateRequest(user) && (
           <Link to="/requests/new" className="btn-primary self-start sm:self-auto">
-            <Plus className="h-4 w-4" aria-hidden="true" /> New request
+            <Plus className="h-4 w-4" aria-hidden="true" /> New movement request
           </Link>
         )}
       </div>
@@ -117,63 +217,71 @@ export default function DashboardPage() {
 
       {loadError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{loadError}</p>}
 
-      {/* What needs this person's attention comes first */}
-      {(actionable.length > 0 || openTasks.length > 0 || !loading) && !isRequester(user) && (
-        <section aria-labelledby="todo">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 id="todo" className="section-title">Needs your action</h2>
-            {actionable.length + openTasks.length > 0 && (
-              <span className="badge badge-blue">{actionable.length + openTasks.length}</span>
-            )}
-          </div>
-          <div className="card-flat overflow-hidden">
-            {loading ? (
-              <LoadingSkeleton rows={2} />
-            ) : actionable.length === 0 && openTasks.length === 0 ? (
-              <div className="flex items-center gap-3 px-5 py-6 text-sm text-slate-600">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" aria-hidden="true" />
-                You're all caught up. Nothing is waiting for you.
-              </div>
-            ) : (
-              <>
-                {actionable.length > 0 && <RequestList requests={actionable} showRequester />}
-                {openTasks.length > 0 && (
-                  <div className={actionable.length ? 'border-t border-slate-100' : ''}>
-                    <TaskList tasks={openTasks} />
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </section>
-      )}
-
-      <section aria-label="Summary" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Stat label={isRequester(user) ? 'My requests' : 'All requests'} value={loading ? '–' : scope.length} />
-        <Stat label="Awaiting approval" value={loading ? '–' : scope.filter((r) => APPROVAL_STATUSES.includes(r.status)).length} />
-        <Stat label="Being moved" value={loading ? '–' : scope.filter((r) => MOVING_STATUSES.includes(r.status)).length} />
-        <Stat label="Completed" value={loading ? '–' : scope.filter((r) => ['transport_completed', 'closed'].includes(r.status)).length} />
+      {/* Key numbers */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <section aria-label="Summary" className="grid grid-cols-2 gap-3 sm:gap-4 lg:col-span-2">
+        <StatCard to="/requests" icon={FileText} tone="blue" loading={loading}
+          label={requester ? 'My requests' : 'All requests'} value={counts.all}
+          caption={counts.rejected ? `${counts.rejected} rejected` : requester ? 'Requests you have made' : 'Across all departments'} />
+        <StatCard to="/requests?tab=approval" icon={Clock} tone="amber" loading={loading}
+          label="Awaiting approval" value={counts.approval} caption="Department head or AMA pool" />
+        <StatCard to="/requests?tab=moving" icon={Truck} tone="sky" loading={loading}
+          label="Being moved" value={counts.moving} caption="Awaiting pickup or in transit" />
+        <StatCard to="/requests?tab=done" icon={BadgeCheck} tone="green" loading={loading}
+          label="Completed" value={counts.done} caption="Delivered or closed in the register" />
       </section>
 
-      <section aria-labelledby="recent">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 id="recent" className="section-title">{isRequester(user) ? 'My recent requests' : 'Recent requests'}</h2>
+        <Pipeline requests={scope} loading={loading} />
+      </div>
+
+      {/* What needs attention */}
+        <section className="card-flat min-w-0 overflow-hidden" aria-labelledby="todo-title">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <div>
+              <h2 id="todo-title" className="section-title">Needs your action</h2>
+              <p className="text-xs text-slate-500">Requests and moves waiting for you</p>
+            </div>
+            {!loading && todo.length > 0 && <span className="badge badge-blue">{todo.length}</span>}
+          </div>
+          {loading ? (
+            <LoadingSkeleton rows={3} />
+          ) : todo.length === 0 ? (
+            <div className="flex items-center gap-3 px-5 py-8 text-sm text-slate-600">
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
+              {requester ? 'Nothing needs you right now. Your requests are with the approvers.' : "You're all caught up. Nothing is waiting for you."}
+            </div>
+          ) : (
+            <RequestTable requests={todo} actionFor={(r) => r.__action} />
+          )}
+        </section>
+
+      {/* Recent */}
+      <section className="card-flat min-w-0 overflow-hidden" aria-labelledby="recent-title">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 id="recent-title" className="section-title">{requester ? 'My recent requests' : 'Recent requests'}</h2>
+            <p className="text-xs text-slate-500">The latest {Math.min(8, scope.length)} of {scope.length}</p>
+          </div>
           <Link to="/requests" className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:text-blue-800">
             View all <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </div>
-        <div className="card-flat overflow-hidden">
-          {loading ? (
-            <LoadingSkeleton rows={4} />
-          ) : (
-            <RequestList
-              requests={scope.slice(0, 6)}
-              showRequester={!isRequester(user)}
-              empty={canCreateRequest(user) ? 'No requests yet. Start one with “New request”.' : 'No requests to show.'}
-            />
-          )}
-        </div>
+        {loading ? (
+          <LoadingSkeleton rows={4} />
+        ) : (
+          <RequestTable
+            requests={scope.slice(0, 8)}
+            showRequester={!requester}
+            empty={canCreateRequest(user) ? 'No requests yet. Start one with “New movement request”.' : 'No requests to show.'}
+          />
+        )}
       </section>
+
+      {!loading && isAdmin(user) && (
+        <p className="flex items-center gap-2 text-xs text-slate-400">
+          <ListChecks className="h-3.5 w-3.5" aria-hidden="true" /> As an administrator you can act on every stage.
+        </p>
+      )}
     </div>
   )
 }

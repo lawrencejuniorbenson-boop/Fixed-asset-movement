@@ -538,7 +538,7 @@ export const supabaseDataService = {
       .select(`
         *,
         request:movement_requests(
-          id, reference_no, present_location, new_location, purpose, status
+          id, reference_no, present_location, new_location, purpose, status, requesting_officer_id, requesting_officer_staff_id, department, priority, movement_date, fulfillment_type, created_at
         )
       `)
       .order('created_at', { ascending: false })

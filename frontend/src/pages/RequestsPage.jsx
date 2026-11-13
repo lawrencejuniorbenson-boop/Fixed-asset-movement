@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Search, Plus, FileSpreadsheet, FileText } from 'lucide-react'
 import api from '../api/client'
-import RequestList from '../components/RequestList'
+import RequestTable from '../components/RequestTable'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import EmptyState from '../components/EmptyState'
 import AdminAuditExportModal from '../components/AdminAuditExportModal'
@@ -132,7 +132,7 @@ export default function RequestsPage() {
             description={q ? 'Try a different search or filter.' : tab.key === 'action' ? 'Nothing is waiting for you.' : undefined}
           />
         ) : (
-          <RequestList requests={filtered} showRequester={!isRequester(user)} />
+          <RequestTable requests={filtered} showRequester={!isRequester(user)} />
         )}
       </div>
 
