@@ -43,7 +43,12 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+    if (
+      origin.startsWith('http://localhost:') ||
+      origin.startsWith('http://127.0.0.1:') ||
+      origin.endsWith('.vercel.app') ||
+      (process.env.CLIENT_URL && origin === process.env.CLIENT_URL)
+    ) {
       return callback(null, true);
     }
     return callback(new Error('Blocked by CORS policy'));
@@ -75,6 +80,10 @@ app.use((err, _req, res, _next) => {
 });
 
 // ── Start server ──────────────────────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅  Fixed Asset Movement API running on http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅  Fixed Asset Movement API running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
