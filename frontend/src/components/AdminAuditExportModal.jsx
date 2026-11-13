@@ -288,9 +288,9 @@ export default function AdminAuditExportModal({ isOpen, onClose, requests = [], 
                   <option value="closed">Closed &amp; Registered</option>
                   <option value="in_transport">In Transit</option>
                   <option value="transport_completed">Relocated (Pending Closure)</option>
-                  <option value="head_approved">Asset Verification</option>
-                  <option value="ama_officer_approved">Final Authorization</option>
-                  <option value="pending_head">Pending Unit Head</option>
+                  <option value="fully_approved">Awaiting Pickup</option>
+                  <option value="head_approved">Awaiting AMA Approval</option>
+                  <option value="pending_head">Awaiting Department Head</option>
                   <option value="rejected">Rejected</option>
                 </select>
               </div>

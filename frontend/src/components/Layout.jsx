@@ -15,8 +15,8 @@ function navFor(user) {
   const items = [{ to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' }]
   if (canCreateRequest(user)) items.push({ to: '/requests/new', icon: FilePlus2, label: 'New request' })
   items.push({ to: '/requests', icon: FileText, label: isRequester(user) ? 'My requests' : 'Requests', match: (p) => p.startsWith('/requests') && !p.startsWith('/requests/new') })
-  if (isAdmin(user) || isTransport(user)) items.push({ to: '/transport', icon: Truck, label: 'Transport moves', match: (p) => p.startsWith('/transport') })
-  if (isAdmin(user) || isIt(user)) items.push({ to: '/it-logistics', icon: Server, label: 'IT moves', match: (p) => p.startsWith('/it-logistics') })
+  if (isAdmin(user) || isTransport(user)) items.push({ to: '/transport', icon: Truck, label: 'Transport', match: (p) => p.startsWith('/transport') })
+  if (isAdmin(user) || isIt(user)) items.push({ to: '/it-logistics', icon: Server, label: 'IT', match: (p) => p.startsWith('/it-logistics') })
   if (canSeeAudit(user)) items.push({ to: '/audit', icon: ShieldCheck, label: 'Audit trail' })
   if (canManageUsers(user)) items.push({ to: '/admin/users', icon: Users, label: 'Users' })
   return items

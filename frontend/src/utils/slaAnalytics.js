@@ -108,8 +108,6 @@ export function calculateStageDurations(request, auditLog = []) {
       transportAssignedAt = new Date(officerAssignedLog.created_at)
     } else if (task.created_at) {
       transportAssignedAt = new Date(task.created_at)
-    } else if (amaHeadApprovedAt) {
-      transportAssignedAt = new Date(amaHeadApprovedAt.getTime() + 1000 * 60 * 30) // fallback ~30m
     }
   }
 

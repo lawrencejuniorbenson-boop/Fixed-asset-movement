@@ -8,13 +8,11 @@ export default function StageProgress({ request }) {
   const rejected = request.status === 'rejected'
   const closed = request.status === 'closed'
   // For a rejected request, show the stage where it stopped.
-  const current = rejected
-    ? (request.ama_officer_approved_at ? 2 : request.head_approved_at ? 1 : 0)
-    : stageIndex(request.status)
-  const steps = STAGES.slice(0, 6) // "Closed" is shown as the final state of the last step
+  const current = rejected ? (request.head_approved_at ? 1 : 0) : stageIndex(request.status)
+  const steps = STAGES.filter((s) => s.status !== 'closed') // "Closed" = every step done
 
   return (
-    <ol className="grid gap-3 sm:grid-cols-6 sm:gap-2" aria-label="Request progress">
+    <ol className="grid gap-3 sm:grid-cols-5 sm:gap-2" aria-label="Request progress">
       {steps.map((s, i) => {
         const done = closed || i < current
         const isCurrent = !closed && i === current

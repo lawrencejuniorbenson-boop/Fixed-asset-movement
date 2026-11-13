@@ -245,7 +245,7 @@ export default function RequestDetailPage() {
                   {isItMove ? <Server className="h-5 w-5" aria-hidden="true" /> : <Truck className="h-5 w-5" aria-hidden="true" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-900">{isItMove ? 'IT move' : 'Transport move'}: {statusLabel(task.status)}</p>
+                  <p className="text-sm font-medium text-slate-900">{isItMove ? 'IT' : 'Transport'}: {statusLabel(task.status)}</p>
                   <p className="truncate text-sm text-slate-500">
                     {[task.assigned_officer_name, task.vehicle_details, task.scheduled_date && formatDate(task.scheduled_date)].filter(Boolean).join(' · ') || 'Not scheduled yet'}
                   </p>

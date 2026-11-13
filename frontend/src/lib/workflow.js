@@ -33,8 +33,7 @@ export const canManageUsers = (u) => isAdmin(u)
 // The movement lifecycle, in order.
 export const STAGES = [
   { status: 'pending_head', label: 'Department approval', owner: 'Department Head' },
-  { status: 'head_approved', label: 'Asset verification', owner: 'AMA pool' },
-  { status: 'ama_officer_approved', label: 'Final authorization', owner: 'AMA pool' },
+  { status: 'head_approved', label: 'AMA approval', owner: 'AMA pool' },
   { status: 'fully_approved', label: 'Awaiting pickup', owner: 'Transport / IT pool' },
   { status: 'in_transport', label: 'In transit', owner: 'Transport / IT pool' },
   { status: 'transport_completed', label: 'Register update', owner: 'AMA pool' },
@@ -46,7 +45,10 @@ export const APPROVAL_STATUSES = ['pending_head', 'head_approved', 'ama_officer_
 export const MOVING_STATUSES = ['fully_approved', 'in_transport']
 
 export function stageIndex(status) {
-  return STAGES.findIndex((s) => s.status === status)
+  // 'ama_officer_approved' only exists on requests from the older two-step
+  // AMA flow; it belongs to the AMA approval stage.
+  const s = status === 'ama_officer_approved' ? 'head_approved' : status
+  return STAGES.findIndex((x) => x.status === s)
 }
 
 const poolFor = (request) => (request?.fulfillment_type === 'it' ? 'IT' : 'Transport')
@@ -56,8 +58,8 @@ export function statusLabel(status, fulfillmentType) {
   const pool = fulfillmentType === 'it' ? 'IT' : 'Transport'
   switch (status) {
     case 'pending_head': return 'Awaiting department head'
-    case 'head_approved': return 'Awaiting asset verification'
-    case 'ama_officer_approved': return 'Awaiting final authorization'
+    case 'head_approved': return 'Awaiting AMA approval'
+    case 'ama_officer_approved': return 'Awaiting AMA authorization'
     case 'fully_approved': return `Awaiting ${pool} pickup`
     case 'in_transport': return 'In transit'
     case 'transport_completed': return 'Awaiting register update'
@@ -96,9 +98,14 @@ export function nextAction(request, u) {
         : null
     case 'head_approved':
       return admin || isAma(u)
-        ? { kind: 'approve', label: 'Verify assets', title: 'Asset verification', help: 'Check the asset names and codes against the fixed asset register.' }
+        ? {
+            kind: 'approve',
+            label: 'Verify & authorize',
+            title: 'AMA verification and approval',
+            help: `Check the asset names and codes against the fixed asset register. Approving authorizes the movement and sends it to the ${poolFor(request)} pool for pickup.`
+          }
         : null
-    case 'ama_officer_approved':
+    case 'ama_officer_approved': // older two-step requests only
       return admin || isAma(u)
         ? { kind: 'approve', label: 'Authorize movement', title: 'Final authorization', help: `Authorizing sends this request to the ${poolFor(request)} pool for pickup.` }
         : null
