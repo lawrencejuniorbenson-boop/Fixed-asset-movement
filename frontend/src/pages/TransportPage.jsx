@@ -52,7 +52,7 @@ export default function TransportPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="page-title">{isItView ? 'IT moves' : 'Transport moves'}</h1>
+        <h1 className="page-title">{isItView ? 'IT' : 'Transport'}</h1>
         <p className="page-subtitle">
           Authorized movements for the {isItView ? 'IT' : 'Transport'} pool. Assign an officer, record the pickup, then confirm delivery.
         </p>

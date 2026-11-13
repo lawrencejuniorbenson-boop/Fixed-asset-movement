@@ -229,7 +229,7 @@ export default function TransportDetailPage() {
     <div className="space-y-6">
       <div>
         <Link to={listPath} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {itTask ? 'IT moves' : 'Transport moves'}
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {itTask ? 'IT' : 'Transport'}
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <h1 className="font-mono text-xl font-semibold text-slate-900 sm:text-2xl">{req.reference_no || `Move ${task.id}`}</h1>

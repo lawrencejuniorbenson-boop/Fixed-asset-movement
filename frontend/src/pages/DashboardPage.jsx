@@ -156,7 +156,7 @@ export default function DashboardPage() {
       items: t.items || [],
       movement_date: t.scheduled_date || t.request?.movement_date,
       __href: taskPath(t),
-      __kind: t.fulfillment_type === 'it' ? 'IT move' : 'Transport move',
+      __kind: t.fulfillment_type === 'it' ? 'IT' : 'Transport',
       __action: TASK_STEP[t.status] || 'Open'
     }))
   ]
