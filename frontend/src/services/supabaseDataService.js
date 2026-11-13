@@ -6,195 +6,49 @@
 
 import { getSupabase } from '../lib/supabase'
 
-export const CORPORATE_STAFF_MAP = {}
-
-export function resolveStaff(idOrEmail) {
-  if (!idOrEmail) return null
-  const num = Number(idOrEmail)
-  if (CORPORATE_STAFF_MAP[num]) return CORPORATE_STAFF_MAP[num]
-  const str = String(idOrEmail).toLowerCase()
-  return Object.values(CORPORATE_STAFF_MAP).find(s => 
-    s.email.toLowerCase() === str || s.staff_id.toLowerCase() === str || s.name.toLowerCase() === str
-  ) || null
+// Staff names come from public.users (readable by every staff member).
+// Names are cached for a short time to avoid re-reading them on every call.
+let nameCache = { at: 0, map: {} }
+async function getNameMap(supabase, force = false) {
+  if (!force && Date.now() - nameCache.at < 30000) return nameCache.map
+  const { data } = await supabase.from('users').select('id, name, department, staff_id, role')
+  const map = {}
+  ;(data || []).forEach(u => { map[u.id] = u })
+  nameCache = { at: Date.now(), map }
+  return map
 }
 
+// Only what is actually recorded is shown. Nothing is inferred or invented:
+// this data backs an audit trail.
 export function populateTaskRecord(t) {
   if (!t) return null
-  const isIt = t.fulfillment_type === 'it'
-  let officerName = t.assigned_officer_name
-  if (!officerName || officerName === 'Transport Officer' || officerName === 'IT Specialist') {
-    const s = resolveStaff(t.assigned_officer_id)
-    if (s) officerName = s.name
-    else if (t.assignment_notes && t.assignment_notes.includes('Assigned:')) {
-      const m = t.assignment_notes.match(/Assigned:\s*([^.]+)/)
-      if (m) officerName = m[1].trim()
-    } else {
-      officerName = isIt ? 'IT Logistics Officer' : 'Transport Pool Officer'
-    }
-  }
-
-  const transportHead = resolveStaff(t.transport_head_id)
-  const defaultHead = isIt ? 'IT Infrastructure Head' : 'Transport Pool Head'
-
-  return {
-    ...t,
-    fulfillment_type: t.fulfillment_type || (isIt ? 'it' : 'transport'),
-    assigned_officer_name: officerName,
-    transport_head_name: t.transport_head_name || (transportHead ? transportHead.name : defaultHead),
-    transport_started_name: t.transport_started_name || (['in_progress', 'completed'].includes(t.status) ? officerName : null),
-    transport_completed_name: t.transport_completed_name || (t.status === 'completed' ? officerName : null)
-  }
+  return { ...t, fulfillment_type: t.fulfillment_type === 'it' ? 'it' : 'transport' }
 }
 
-export function populateRequestRecord(r) {
+export function populateRequestRecord(r, names = {}) {
   if (!r) return null
-  const requester = resolveStaff(r.requesting_officer_id)
-  const headApprover = resolveStaff(r.head_approved_by)
-  const amaOfficer = resolveStaff(r.ama_officer_approved_by)
-  const amaHead = resolveStaff(r.ama_head_approved_by)
-  const amaClosed = resolveStaff(r.ama_closed_by)
-
   const rawTask = Array.isArray(r.transport_task) ? r.transport_task[0] : r.transport_task
-  const transportTask = populateTaskRecord(rawTask)
-
-  // Enrich audit log entries so every event shows the officer's real name and pool
-  let auditLog = (r.audit_log || []).map(log => {
-    let pName = log.performed_by_name
-    if (!pName || pName === 'System / Auto' || pName === 'Officer') {
-      const s = resolveStaff(log.performed_by)
-      if (s) {
-        pName = `${s.name} (${s.staff_id} • ${s.department})`
-      }
-    }
-    return {
+  const requester = names[r.requesting_officer_id]
+  const auditLog = [...(r.audit_log || [])]
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .map(log => ({
       ...log,
-      performed_by_name: pName || 'Corporate Officer'
-    }
-  })
-
-  const resolvedRequester = r.requester_name || r.officer_doing_movement || (requester ? requester.name : 'Requesting Officer')
-  const resolvedHead = r.head_approved_name || r.authorized_by || (headApprover ? headApprover.name : (r.status !== 'pending_head' ? 'Unit Head' : null))
-  const resolvedAmaOfficer = r.ama_officer_name || (amaOfficer ? amaOfficer.name : (!['pending_head', 'head_approved'].includes(r.status) ? 'Asset & Archives Pool' : null))
-  const resolvedAmaHead = r.ama_head_name || (amaHead ? amaHead.name : (['fully_approved', 'in_transport', 'transport_completed', 'closed'].includes(r.status) ? 'Asset & Archives Pool' : null))
-  const resolvedAmaClosed = r.ama_closed_name || (amaClosed ? amaClosed.name : (r.status === 'closed' ? 'Asset & Archives Pool' : null))
-  
-  const hasItAssets = (r.items || []).some(i => {
-    const n = (i.name_of_asset || '').toLowerCase()
-    return n.includes('server') || n.includes('switch') || n.includes('rack') || n.includes('router') || n.includes('ups') || n.includes('cisco') || n.includes('firewall') || n.includes('workstation')
-  })
-  const isIt = r.fulfillment_type === 'it' || transportTask?.fulfillment_type === 'it' || hasItAssets
-  const resolvedFulfillmentHead = isIt ? 'IT Infrastructure Head' : 'Transport Pool Head'
-  const resolvedFulfillmentOfficer = transportTask?.assigned_officer_name || (isIt ? 'IT Logistics Officer' : 'Transport Pool Officer')
-  const fulfillmentPoolLabel = isIt ? 'IT Infrastructure & Systems Pool' : 'Transport & Logistics Pool'
-
-  // If audit_log is empty in DB for this request, synthesize baseline events from the request's real milestone records
-  if (auditLog.length === 0) {
-    const createdAt = r.created_at || new Date().toISOString()
-    auditLog.push({
-      id: `synth-${r.id}-1`,
-      movement_request_id: r.id,
-      action: 'REQUEST_SUBMITTED',
-      created_at: createdAt,
-      performed_by_name: `${resolvedRequester} (Requesting Officer)`,
-      remarks: `Movement request submitted by ${resolvedRequester} for ${(r.items || []).length} asset item(s).`
-    })
-
-    if (r.head_approved_at || r.status !== 'pending_head') {
-      auditLog.push({
-        id: `synth-${r.id}-2`,
-        movement_request_id: r.id,
-        action: 'HEAD_APPROVED',
-        created_at: r.head_approved_at || createdAt,
-        performed_by_name: `${resolvedHead || 'Unit Head'} (Unit Head)`,
-        remarks: r.head_remarks || `Departmental endorsement granted.`
-      })
-    }
-
-    if (r.ama_officer_approved_at || (!['pending_head', 'head_approved'].includes(r.status))) {
-      auditLog.push({
-        id: `synth-${r.id}-3`,
-        movement_request_id: r.id,
-        action: 'ASSET_VERIFIED_BY_AMA_POOL',
-        created_at: r.ama_officer_approved_at || r.head_approved_at || createdAt,
-        performed_by_name: `${resolvedAmaOfficer || 'Asset & Archives Pool'} (Asset & Archives Pool)`,
-        remarks: r.ama_officer_remarks || `Asset codes verified.`
-      })
-    }
-
-    if (r.ama_head_approved_at || (['fully_approved', 'in_transport', 'transport_completed', 'closed'].includes(r.status))) {
-      auditLog.push({
-        id: `synth-${r.id}-4`,
-        movement_request_id: r.id,
-        action: 'FINAL_AUTHORIZATION_BY_AMA_POOL',
-        created_at: r.ama_head_approved_at || r.ama_officer_approved_at || createdAt,
-        performed_by_name: `${resolvedAmaHead || 'Asset & Archives Head'} (Asset & Archives Pool)`,
-        remarks: r.ama_head_remarks || `Final movement authorization approved.`
-      })
-    }
-
-    if (transportTask && transportTask.status !== 'pending_assignment') {
-      auditLog.push({
-        id: `synth-${r.id}-5`,
-        movement_request_id: r.id,
-        action: isIt ? 'IT_EQUIPMENT_ALLOCATED' : 'OFFICER_ASSIGNED',
-        created_at: transportTask.created_at || r.ama_head_approved_at || createdAt,
-        performed_by_name: `${transportTask.transport_head_name || resolvedFulfillmentHead} (${fulfillmentPoolLabel})`,
-        remarks: isIt
-          ? `IT task assigned: ${resolvedFulfillmentOfficer}. Carrier / Equipment: ${transportTask.vehicle_details || 'IT Designated Van / Hand Trolley'}.`
-          : `Assigned: ${resolvedFulfillmentOfficer}. Vehicle: ${transportTask.vehicle_details || 'Toyota Hilux'}.`
-      })
-    }
-
-    if (['in_transport', 'transport_completed', 'closed'].includes(r.status) || (transportTask && ['in_progress', 'completed'].includes(transportTask.status))) {
-      auditLog.push({
-        id: `synth-${r.id}-6`,
-        movement_request_id: r.id,
-        action: isIt ? 'IT_EQUIPMENT_PICKUP_STARTED' : 'TRANSPORT_STARTED_BY_POOL',
-        created_at: transportTask?.scheduled_date ? `${transportTask.scheduled_date}T08:00:00Z` : createdAt,
-        performed_by_name: `${transportTask?.transport_started_name || resolvedFulfillmentOfficer} (${fulfillmentPoolLabel})`,
-        remarks: isIt
-          ? `IT hardware and servers de-racked and in physical transit with ${transportTask?.vehicle_details || 'IT Carrier'}.`
-          : `Physical relocation in transit with ${transportTask?.vehicle_details || 'carrier'}.`
-      })
-    }
-
-    if (['transport_completed', 'closed'].includes(r.status) || (transportTask && transportTask.status === 'completed')) {
-      auditLog.push({
-        id: `synth-${r.id}-7`,
-        movement_request_id: r.id,
-        action: isIt ? 'IT_RELOCATION_COMPLETED' : 'RELOCATION_COMPLETED_BY_TRANSPORT_POOL',
-        created_at: transportTask?.completed_at || createdAt,
-        performed_by_name: `${transportTask?.transport_completed_name || resolvedFulfillmentOfficer} (${fulfillmentPoolLabel})`,
-        remarks: transportTask?.completion_notes || (isIt
-          ? `IT equipment and servers safely delivered, mounted, and connectivity verified by ${resolvedFulfillmentOfficer}.`
-          : `Assets physically delivered by ${resolvedFulfillmentOfficer}.`)
-      })
-    }
-
-    if (r.status === 'closed' || r.ama_closed_at) {
-      auditLog.push({
-        id: `synth-${r.id}-8`,
-        movement_request_id: r.id,
-        action: 'REGISTER_UPDATED_AND_CLOSED_BY_AMA_POOL',
-        created_at: r.ama_closed_at || createdAt,
-        performed_by_name: `${resolvedAmaClosed || 'Asset & Archives Officer'} (Asset & Archives Pool)`,
-        remarks: r.ama_closing_remarks || `Asset register updated and request closed.`
-      })
-    }
-  }
+      performed_by_name: log.performed_by_name || names[log.performed_by]?.name || 'Unknown user'
+    }))
 
   return {
     ...r,
-    fulfillment_type: isIt ? 'it' : (r.fulfillment_type || 'transport'),
-    requester_name: resolvedRequester,
-    requester_department: r.requester_department || r.department || (requester ? requester.department : 'Operations'),
-    requester_staff_id: r.requesting_officer_staff_id || (requester ? requester.staff_id : ''),
-    head_approver_name: resolvedHead,
-    ama_officer_name: resolvedAmaOfficer,
-    ama_head_name: resolvedAmaHead,
-    ama_closed_name: resolvedAmaClosed,
-    items: r.items || [],
-    transport_task: transportTask,
+    fulfillment_type: r.fulfillment_type === 'it' ? 'it' : 'transport',
+    requester_name: requester?.name || 'Unknown requester',
+    requester_department: r.department || requester?.department || '',
+    requester_staff_id: r.requesting_officer_staff_id || requester?.staff_id || '',
+    head_approver_name: r.head_approved_name || null,
+    ama_officer_name: r.ama_officer_name || null,
+    ama_head_name: r.ama_head_name || null,
+    ama_closed_name: r.ama_closed_name || null,
+    rejected_by_name: r.rejected_by ? (names[r.rejected_by]?.name || null) : null,
+    items: [...(r.items || [])].sort((a, b) => (a.item_no || 0) - (b.item_no || 0)),
+    transport_task: populateTaskRecord(rawTask),
     audit_log: auditLog
   }
 }
@@ -297,6 +151,7 @@ export const supabaseDataService = {
       }
     }
 
+    const names = await getNameMap(supabase)
     return requests.map(r => {
       const combined = {
         ...r,
@@ -304,7 +159,7 @@ export const supabaseDataService = {
         transport_task: tasksMap[r.id] || null,
         audit_log: auditMap[r.id] || []
       }
-      return populateRequestRecord(combined)
+      return populateRequestRecord(combined, names)
     })
   },
 
@@ -346,7 +201,7 @@ export const supabaseDataService = {
       audit_log: auditLog
     }
 
-    return populateRequestRecord(combined)
+    return populateRequestRecord(combined, await getNameMap(supabase))
   },
 
   async createRequest(payload, user) {
@@ -358,12 +213,8 @@ export const supabaseDataService = {
     const { items = [], ...formData } = payload
     const userId = user?.id && !isNaN(Number(user.id)) ? Number(user.id) : null
 
-    // Detect IT vs Transport fulfillment
-    const hasItAssets = items.some(i => {
-      const n = (i.name_of_asset || '').toLowerCase()
-      return n.includes('server') || n.includes('switch') || n.includes('rack') || n.includes('router') || n.includes('ups') || n.includes('cisco')
-    })
-    const resolvedFulfillment = formData.fulfillment_type === 'it' || hasItAssets ? 'it' : 'transport'
+    // The requester chooses Transport or IT explicitly on the form.
+    const resolvedFulfillment = formData.fulfillment_type === 'it' ? 'it' : 'transport'
 
     // 1. Insert Movement Request
     const insertPayload = {
@@ -470,7 +321,7 @@ export const supabaseDataService = {
       updates.head_approved_by = numericUserId
       updates.head_approved_name = user?.name || 'Unit Head'
       updates.head_approved_at = now
-      updates.head_remarks = remarks || 'Departmental approval granted.'
+      updates.head_remarks = remarks || null
       updates.head_signature = user?.name || 'Signed Electronically'
       auditAction = 'HEAD_APPROVED'
     } else if (request.status === 'head_approved') {
@@ -478,7 +329,7 @@ export const supabaseDataService = {
       updates.ama_officer_approved_by = numericUserId
       updates.ama_officer_name = user?.name || 'Asset & Archives Pool'
       updates.ama_officer_approved_at = now
-      updates.ama_officer_remarks = remarks || 'Asset codes and register verified.'
+      updates.ama_officer_remarks = remarks || null
       updates.ama_officer_signature = user?.name || 'Verified Electronically'
       auditAction = 'ASSET_VERIFIED_BY_AMA_POOL'
     } else if (request.status === 'ama_officer_approved') {
@@ -487,7 +338,7 @@ export const supabaseDataService = {
       updates.ama_head_name = user?.name || 'Asset & Archives Pool'
       updates.ama_head_signature = user?.name || 'Authorized Electronically'
       updates.ama_head_approved_at = now
-      updates.ama_head_remarks = remarks || 'Final approval granted. Relocation task initiated.'
+      updates.ama_head_remarks = remarks || null
       auditAction = 'FINAL_AUTHORIZATION_BY_AMA_POOL'
 
       // The Transport / IT fulfillment task is created by the database when
@@ -528,8 +379,8 @@ export const supabaseDataService = {
         movement_request_id: Number(id),
         action: auditAction || 'STATUS_UPDATED',
         performed_by: numericUserId,
-        performed_by_name: `${user?.name || 'Officer'} (Asset & Archives Pool)`,
-        remarks: remarks || `Action processed by ${user?.name || 'Asset & Archives Pool'}`
+        performed_by_name: user?.name || null,
+        remarks: remarks || null
       })
     } catch (auditErr) {
       console.warn('[approveRequest audit log warning]', auditErr)
@@ -583,7 +434,7 @@ export const supabaseDataService = {
         ama_closed_by: numericUserId,
         ama_closed_name: user?.name || 'Asset & Archives Pool',
         ama_closed_at: now,
-        ama_closing_remarks: remarks || 'Asset register updated and file closed.'
+        ama_closing_remarks: remarks || null
       })
       .eq('id', id)
 
@@ -594,7 +445,7 @@ export const supabaseDataService = {
           status: 'closed',
           ama_closed_name: user?.name || 'Asset & Archives Pool',
           ama_closed_at: now,
-          ama_closing_remarks: remarks || 'Asset register updated and file closed.'
+          ama_closing_remarks: remarks || null
         })
         .eq('id', id)
       error = retryRes.error
@@ -608,8 +459,8 @@ export const supabaseDataService = {
         movement_request_id: Number(id),
         action: 'REGISTER_UPDATED_AND_CLOSED_BY_AMA_POOL',
         performed_by: numericUserId,
-        performed_by_name: `${user?.name || 'Officer'} (Asset & Archives Pool)`,
-        remarks: remarks || `Fixed asset register updated and request closed by ${user?.name || 'Asset & Archives Pool'}.`
+        performed_by_name: user?.name || null,
+        remarks: remarks || null
       })
     } catch (auditErr) {
       console.warn('[closeRequest audit log warning]', auditErr)
@@ -672,10 +523,9 @@ export const supabaseDataService = {
     if (!supabase) throw new Error('Supabase is not configured')
 
     const role = user?.role
-    const userDept = user?.department || ''
     const isAdmin = role === 'admin' || role === 'auditor'
-    const isTransport = role === 'transport_head' || role === 'transport_officer' || userDept.includes('Transport') || userDept.includes('Logistics') || userDept.includes('Fleet')
-    const isIt = role === 'it_head' || role === 'it_officer' || userDept.includes('IT') || userDept.includes('Information')
+    const isTransport = role === 'transport_head' || role === 'transport_officer'
+    const isIt = role === 'it_head' || role === 'it_officer'
 
     let query = supabase
       .from('transport_tasks')
@@ -714,11 +564,12 @@ export const supabaseDataService = {
       })
     }
 
+    const names = await getNameMap(supabase)
     return (data || []).map(t => {
       const populated = populateTaskRecord(t)
       return {
         ...populated,
-        request: populateRequestRecord(t.request),
+        request: populateRequestRecord(t.request, names),
         items: itemsMap[t.movement_request_id] || []
       }
     })
@@ -748,7 +599,7 @@ export const supabaseDataService = {
     const populated = populateTaskRecord(data)
     return {
       ...populated,
-      request: populateRequestRecord(data.request),
+      request: populateRequestRecord(data.request, await getNameMap(supabase)),
       items: items || []
     }
   },
@@ -807,53 +658,63 @@ export const supabaseDataService = {
     return data
   },
 
+  async updateUser(id, changes) {
+    const supabase = getSupabase()
+    if (!supabase) throw new Error('Supabase is not configured')
+    const payload = {}
+    for (const k of ['name', 'role', 'department', 'staff_id']) {
+      if (changes[k] !== undefined) payload[k] = typeof changes[k] === 'string' ? changes[k].trim() || null : changes[k]
+    }
+    const { data, error } = await supabase
+      .from('users')
+      .update(payload)
+      .eq('id', Number(id))
+      .select('id, name, email, role, department, staff_id')
+    if (error) throw error
+    if (!data || data.length === 0) throw new Error('You are not allowed to change this user.')
+    nameCache.at = 0
+    return data[0]
+  },
+
   async deleteUser(id) {
     const supabase = getSupabase()
     if (!supabase) throw new Error('Supabase is not configured')
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('users')
       .delete()
       .eq('id', Number(id))
+      .select('id')
     if (error) throw error
+    if (!data || data.length === 0) throw new Error('You are not allowed to remove this user.')
+    nameCache.at = 0
     return true
   },
 
   async getFulfillmentOfficers(isIt = false) {
     const users = await this.getUsers()
     if (!users || users.length === 0) return []
-    if (isIt) {
-      return users.filter(u =>
-        u.role === 'it_head' ||
-        u.role === 'it_officer' ||
-        (u.department && (u.department.toLowerCase().includes('it') || u.department.toLowerCase().includes('information')))
-      )
-    }
-    return users.filter(u =>
-      u.role === 'transport_head' ||
-      u.role === 'transport_officer' ||
-      (u.department && u.department.toLowerCase().includes('transport'))
-    )
+    // Administrators can also be assigned (e.g. a single-admin demo).
+    const pool = isIt ? ['it_head', 'it_officer'] : ['transport_head', 'transport_officer']
+    return users
+      .filter(u => pool.includes(u.role) || u.role === 'admin')
+      .sort((a, b) => (a.role === 'admin') - (b.role === 'admin'))
   },
 
   async assignTransport(id, assignData, user) {
     const supabase = getSupabase()
     if (!supabase) throw new Error('Supabase is not configured')
 
-    const task = await this.getTransportTaskById(id)
-    const isItTask = task?.fulfillment_type === 'it' || task?.request?.fulfillment_type === 'it'
-
     const rawId = assignData.assigned_officer_id
     const numericOfficerId = (rawId !== null && rawId !== undefined && String(rawId).trim() !== '' && !isNaN(Number(rawId)) && Number(rawId) > 0)
       ? Number(rawId)
       : null
-    const defaultOfficer = isItTask ? 'IT Logistics Officer' : 'Transport Pool Officer'
-    const officerName = assignData.assigned_officer_name?.trim() || defaultOfficer
+    const officerName = assignData.assigned_officer_name?.trim() || null
     const driverName = assignData.driver_name?.trim() || null
 
     const payload = {
       assigned_officer_id: numericOfficerId,
       assigned_officer_name: officerName,
-      vehicle_details: assignData.vehicle_details?.trim() || (isItTask ? 'IT Equipment Transport Van (Anti-Static & Shock Padded)' : 'Transport Vehicle'),
+      vehicle_details: assignData.vehicle_details?.trim() || null,
       driver_name: driverName,
       scheduled_date: assignData.scheduled_date,
       assessment_notes: assignData.assessment_notes?.trim() || null,
@@ -890,7 +751,6 @@ export const supabaseDataService = {
     const currentTask = await this.getTransportTaskById(id)
     if (currentTask?.movement_request_id) {
       const isIt = currentTask.fulfillment_type === 'it' || currentTask.request?.fulfillment_type === 'it'
-      const poolName = isIt ? 'IT Infrastructure & Systems Pool' : 'Transport & Logistics Pool'
       const numericUserId = user?.id && !isNaN(Number(user.id)) ? Number(user.id) : null
       try {
         await supabase.from('audit_log').insert({
@@ -898,7 +758,7 @@ export const supabaseDataService = {
           transport_task_id: Number(id),
           action: isIt ? 'IT_OFFICER_ASSIGNED' : 'OFFICER_ASSIGNED',
           performed_by: numericUserId,
-          performed_by_name: `${user?.name || (isIt ? 'IT Infrastructure Head' : 'Transport Pool Head')} (${poolName})`,
+          performed_by_name: user?.name || null,
           remarks: isIt
             ? `Assigned: ${officerName}. Carrier/Equipment: ${assignData.vehicle_details || 'IT Transport Van'}${driverName ? ` • Driver/Courier: ${driverName}` : ''}. Date: ${assignData.scheduled_date}`
             : `Assigned: ${officerName}. Vehicle: ${assignData.vehicle_details}${driverName ? ` • Driver: ${driverName}` : ''}. Date: ${assignData.scheduled_date}`
@@ -919,7 +779,6 @@ export const supabaseDataService = {
     if (!task) throw new Error('Task not found')
 
     const isItTask = task.fulfillment_type === 'it' || task.request?.fulfillment_type === 'it'
-    const poolName = isItTask ? 'IT Infrastructure & Systems Pool' : 'Transport & Logistics Pool'
     const numericUserId = user?.id && !isNaN(Number(user.id)) ? Number(user.id) : null
 
     // 1. Update transport_tasks status to in_progress
@@ -951,10 +810,8 @@ export const supabaseDataService = {
         transport_task_id: Number(id),
         action: isItTask ? 'IT_EQUIPMENT_PICKUP_STARTED' : 'TRANSPORT_STARTED_BY_POOL',
         performed_by: numericUserId,
-        performed_by_name: `${user?.name || 'Officer'} (${poolName})`,
-        remarks: isItTask
-          ? `IT hardware de-racking and transit started by ${user?.name || 'IT Systems Officer'}`
-          : `Physical relocation started by ${user?.name || 'Transport Pool Officer'}`
+        performed_by_name: user?.name || null,
+        remarks: null
       })
     } catch (err) {
       console.warn('[startTransport audit_log warning]', err)
@@ -971,7 +828,6 @@ export const supabaseDataService = {
     if (!task) throw new Error('Task not found')
 
     const isItTask = task.fulfillment_type === 'it' || task.request?.fulfillment_type === 'it'
-    const poolName = isItTask ? 'IT Infrastructure & Systems Pool' : 'Transport & Logistics Pool'
     const numericUserId = user?.id && !isNaN(Number(user.id)) ? Number(user.id) : null
 
     const now = new Date().toISOString()
@@ -980,7 +836,7 @@ export const supabaseDataService = {
       .update({
         status: 'completed',
         completed_at: now,
-        completion_notes: completionNotes?.trim() || (isItTask ? 'IT equipment safely relocated, mounted, and connectivity verified at destination.' : 'Assets physically relocated and verified at destination.')
+        completion_notes: completionNotes?.trim() || null
       })
       .eq('id', id)
 
@@ -1006,10 +862,8 @@ export const supabaseDataService = {
         transport_task_id: Number(id),
         action: isItTask ? 'IT_RELOCATION_COMPLETED' : 'RELOCATION_COMPLETED_BY_TRANSPORT_POOL',
         performed_by: numericUserId,
-        performed_by_name: `${user?.name || 'Officer'} (${poolName})`,
-        remarks: isItTask
-          ? `IT relocation completed and network verified by ${user?.name || 'IT Systems Officer'}. AMA Pool notified.`
-          : `Relocation completed and verified by ${user?.name || 'Transport Pool Officer'}. AMA Pool notified.`
+        performed_by_name: user?.name || null,
+        remarks: completionNotes?.trim() || null
       })
     } catch (auditErr) {
       console.warn('[completeTransport audit log warning]', auditErr)

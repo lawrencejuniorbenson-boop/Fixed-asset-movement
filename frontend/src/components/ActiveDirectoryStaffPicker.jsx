@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Search, UserCheck, Building2, Check, X, Shield, ExternalLink } from 'lucide-react'
-import api from '../api/axios'
+import api from '../api/client'
 
 /**
  * Active Directory Staff Picker Component
@@ -86,7 +86,7 @@ export default function ActiveDirectoryStaffPicker({
   }
 
   return (
-    <div className="relative font-sans" ref={dropdownRef}>
+    <div className="relative " ref={dropdownRef}>
       {label && (
         <div className="flex items-center justify-between mb-1.5">
           <label className="label mb-0">{label}</label>

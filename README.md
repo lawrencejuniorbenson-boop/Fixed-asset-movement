@@ -88,31 +88,57 @@ The platform integrates directly with the organization's corporate **Active Dire
 
 ---
 
-## 👥 User Authentication & Access
+## 🎬 Demo setup: one administrator login
 
-Sign-in uses **Supabase Auth** (passwords are hashed and managed by Supabase, never stored in app tables). Each signed-in account is linked to a staff profile in `public.users`, which holds the role:
-- **Requesting Officer** (Originator)
-- **Requesting Department Head** (Department Review & Approval)
-- **Asset & Archives Department Pool** (Asset Verification, Release & Register Closure)
-- **Transport & Logistics Department Pool** (Fulfillment Scheduling & Physical Relocation)
-- **IT Infrastructure & Systems Pool** (Hardware Pickup & Data Centre Logistics)
-- **Internal Audit & Inspection** (Compliance & Audit Exports)
-- **System Administrator** (Enterprise Oversight & System Configuration)
+For client demonstrations the app uses a single sign-in: one administrator who can perform every step of the workflow. There is no sign-up link.
 
-### How accounts work
+1. In Supabase, run `supabase_schema.sql` once (SQL Editor). The default mode is `login`.
+2. **Authentication → Users → Add user → Create new user**: enter the admin email and a password, and tick **Auto Confirm User**.
+3. In the SQL Editor, make that user the administrator:
+   ```sql
+   UPDATE public.users SET role = 'admin', name = 'Demo Administrator'
+   WHERE email = 'admin@yourcompany.com';
+   ```
+4. Open the site and sign in with that email and password.
+
+The admin can approve every stage, assign themselves to a move, and close requests, so one person can demonstrate the full flow. Other staff can be added on the **Users** page as profiles (for names, roles and assignments); in this demo version they do not sign in.
+
+## 👥 Access modes
+
+The database decides how people get in (`private.settings`, key `access_mode`):
+
+| Mode | What users see | Who can do what |
+|---|---|---|
+| `login` (default) | A sign-in page (Supabase Auth). | Each person acts only as themselves. |
+| `open` | **No login page.** An "Acting as" switcher in the sidebar. | **Anyone with the link can act as any staff profile, including admin.** |
+
+In both modes the database still enforces the workflow: the right role for each stage, stages in order, nobody approves their own request, and every action is recorded in the audit trail under the profile used.
+
+Switch modes in the Supabase SQL Editor; no redeploy is needed:
+
+```sql
+UPDATE private.settings SET value = 'open'  WHERE key = 'access_mode';  -- no login
+UPDATE private.settings SET value = 'login' WHERE key = 'access_mode';  -- require sign-in
+```
+
+**Open mode also needs:** Supabase → Authentication → Sign In / Providers → enable **"Allow anonymous sign-ins"**. If there are no staff profiles yet, the app asks you to create the first administrator.
+
+### Roles
+Requesting Officer, Department Head, AMA Officer, AMA Head, Transport Head/Officer, IT Head/Officer, Internal Auditor, Administrator. Administrators add people and change roles on the **Users** page.
+
+### Accounts in login mode
 - **Self sign-up** always creates a **Requesting Officer**. Nobody can choose their own role.
-- **Other roles** are assigned by an administrator: on *Users → Add User* the admin pre-registers the email and role. The staff member then uses *Create Account* with that same email; once they confirm the email, they receive the pre-assigned role.
-- **First administrator:** sign up, confirm your email, then run in the Supabase SQL Editor:
+- **Other roles:** the admin adds the person on *Users*; the person then uses *Create an account* with that same email and confirms it.
+- **First administrator:** sign up, confirm your email, then run:
   ```sql
   UPDATE public.users SET role = 'admin' WHERE email = 'you@yourbank.com';
   ```
 
 ### Security model (enforced in the database, not the browser)
-- Row Level Security on every table; signed-out visitors can read nothing.
-- Each role only sees the requests relevant to it (see `supabase_schema.sql`, section 6).
-- Approval stages can only be performed by the right role, in order, and the approver's name/ID is stamped by the database.
-- Nobody can approve or close their own request.
-- The audit log is append-only and attributed to the real signed-in user.
+- Row Level Security on every table; visitors without a session can read nothing.
+- Each role only sees the requests relevant to it.
+- Approval stages can only be performed by the right role, in order; approver names and IDs are stamped by the database.
+- The audit log is append-only. The app shows only recorded entries; it never fills gaps with generated ones.
 
 ## 🔐 Supabase Setup (required for deployment)
 
@@ -120,12 +146,13 @@ Sign-in uses **Supabase Auth** (passwords are hashed and managed by Supabase, ne
 2. In **SQL Editor**, run the whole of `supabase_schema.sql`. It is safe to re-run, and it upgrades an older install in place.
 3. In **Authentication → Providers → Email**, keep **Confirm email ON**. Existing staff profiles are linked to a sign-up by email address only after confirmation.
 4. In **Authentication → URL Configuration**, set the **Site URL** to your deployed URL (e.g. your Vercel domain).
-5. In Vercel (or `frontend/.env.local` for local dev), set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the publishable/anon key, **never** the service-role key).
+5. In Vercel (or `frontend/.env.local` for local dev), set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the publishable/anon key, **never** the service-role key), then redeploy. Without them the site shows a "Supabase is not configured" page.
+6. For open mode, enable anonymous sign-ins (see *Access modes*) and run the `UPDATE private.settings …` line.
 
 **Upgrading from the previous version:** the old `users.password` column is deleted. Existing staff keep their profile and role, but each must use *Create Account* once with their existing email to set a new password.
 
 ### Security tests
-`supabase/tests/rls_test.sh` checks the database rules (60 checks: privilege escalation, cross-user access, workflow bypass, etc.) against a plain local PostgreSQL:
+`supabase/tests/rls_test.sh` checks the database rules (83 checks: privilege escalation, cross-user access, workflow bypass, open/login modes, etc.) against a plain local PostgreSQL:
 ```bash
 PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres ./supabase/tests/rls_test.sh
 ```
@@ -134,7 +161,7 @@ PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres ./supabase/tests/rls_test.sh
 
 ## 🚀 How to Run the Platform
 
-> **Production runs on Supabase only.** The Vercel deployment serves the frontend, which talks directly to Supabase. The Express backend in `backend/` is a local development server and is not deployed. If you run it, set `JWT_SECRET` (32+ characters); it refuses to start in production without one.
+> **The app runs on Supabase only.** The frontend talks directly to Supabase and no longer calls the Express API in `backend/` at all. That backend is legacy code; if it stays deployed, set `JWT_SECRET` (32+ characters) or it refuses to start in production.
 
 ### Option 1: Quick Launch
 Double-click `start.bat` in this folder. It will launch both the backend and frontend in separate command windows.

@@ -1,443 +1,269 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
-import {
-  ArrowLeft, CheckCircle2, XCircle, ShieldCheck,
-  Truck, Server, FileCheck, Clock, Hourglass, Download, Lock
-} from 'lucide-react'
-import api from '../api/axios'
-import { useAuth } from '../context/AuthContext'
+import { useState, useEffect, useCallback } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { ArrowLeft, CheckCircle2, XCircle, Truck, Server, ChevronRight, Hourglass, Printer } from 'lucide-react'
+import api from '../api/client'
+import { useAuth, errorText } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import StatusBadge from '../components/StatusBadge'
-import ApprovalTimeline from '../components/ApprovalTimeline'
+import StageProgress from '../components/StageProgress'
+import ActivityLog from '../components/ActivityLog'
 import MovementFormView from '../components/MovementFormView'
 import RequestAuditHistory from '../components/RequestAuditHistory'
-import { calculateStageDurations } from '../utils/slaAnalytics'
+import { PriorityTag } from '../components/RequestList'
+import { taskPath } from '../components/TaskList'
+import { CardSkeleton } from '../components/LoadingSkeleton'
+import { formatDate, formatDateTime } from '../lib/format'
+import { nextAction, canReject, STAGES, stageIndex, statusLabel } from '../lib/workflow'
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-sm text-slate-900">{children || '—'}</dd>
+    </div>
+  )
+}
+
+function ActionPanel({ request, user, onDone }) {
+  const toast = useToast()
+  const action = nextAction(request, user)
+  const rejectable = canReject(request, user)
+  const [remarks, setRemarks] = useState('')
+  const [busy, setBusy] = useState(null)
+
+  if (!action && !rejectable) {
+    if (['closed', 'rejected'].includes(request.status)) return null
+    const stage = STAGES[stageIndex(request.status)]
+    const own = String(request.requesting_officer_id) === String(user?.id)
+    return (
+      <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 print:hidden">
+        <Hourglass className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+        <p>
+          Waiting for the <strong className="font-medium text-slate-800">{stage?.owner || 'next approver'}</strong>
+          {stage ? ` (${stage.label.toLowerCase()})` : ''}.
+          {own && ' You will see the update here once they act.'}
+        </p>
+      </div>
+    )
+  }
+
+  const run = async (kind) => {
+    if (kind === 'reject' && !remarks.trim()) {
+      toast.error('Please give a reason for rejecting.')
+      return
+    }
+    if (kind === 'reject' && !window.confirm('Reject this request? This cannot be undone.')) return
+    setBusy(kind)
+    try {
+      const path = kind === 'reject' ? 'reject' : action.kind === 'close' ? 'close' : 'approve'
+      await api.post(`/requests/${request.id}/${path}`, { remarks: remarks.trim() || undefined })
+      toast.success(kind === 'reject' ? 'Request rejected.' : action.kind === 'close' ? 'Register updated and request closed.' : 'Done. The request has moved to the next stage.')
+      setRemarks('')
+      await onDone()
+    } catch (err) {
+      toast.error(errorText(err, 'The action could not be completed.'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-blue-200 bg-white p-5 shadow-sm ring-4 ring-blue-50 print:hidden" aria-labelledby="action-title">
+      <h2 id="action-title" className="section-title">{action ? action.title : 'Review'}</h2>
+      <p className="mt-1 text-sm text-slate-600">{action ? action.help : 'You can reject this request at its current stage.'}</p>
+      <div className="mt-4">
+        <label htmlFor="remarks" className="label">
+          Remarks <span className="font-normal text-slate-400">{rejectable ? '(required to reject)' : '(optional)'}</span>
+        </label>
+        <textarea
+          id="remarks"
+          rows={2}
+          value={remarks}
+          onChange={(e) => setRemarks(e.target.value)}
+          className="input-field"
+          placeholder={action?.kind === 'close' ? 'e.g. Register updated with new location codes.' : 'Add a note for the record'}
+        />
+      </div>
+      <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        {rejectable && (
+          <button type="button" onClick={() => run('reject')} disabled={!!busy} className="btn-danger">
+            <XCircle className="h-4 w-4" aria-hidden="true" /> {busy === 'reject' ? 'Rejecting…' : 'Reject'}
+          </button>
+        )}
+        {action && (
+          <button type="button" onClick={() => run('approve')} disabled={!!busy} className="btn-primary">
+            <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> {busy === 'approve' ? 'Saving…' : action.label}
+          </button>
+        )}
+      </div>
+    </section>
+  )
+}
+
+const TABS = [
+  { key: 'details', label: 'Details' },
+  { key: 'form', label: 'Official form' },
+  { key: 'timing', label: 'Stage timing' }
+]
 
 export default function RequestDetailPage() {
   const { id } = useParams()
-  const navigate = useNavigate()
   const { user } = useAuth()
-  const toast = useToast()
-
   const [request, setRequest] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('sheet') // 'sheet' | 'audit' | 'workflow'
-  const [actionLoading, setActionLoading] = useState(false)
-  const [remarks, setRemarks] = useState('')
+  const [error, setError] = useState('')
+  const [tab, setTab] = useState('details')
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await api.get(`/requests/${id}`)
-      const data = res.data?.data || res.data
-      setRequest(data)
-    } catch {
-      toast.error('Failed to load request.')
+      setRequest(res.data?.data || null)
+      setError('')
+    } catch (err) {
+      setError(errorText(err, 'Could not load this request.'))
     } finally {
       setLoading(false)
     }
-  }
-
-  useEffect(() => {
-    load()
   }, [id])
 
-  if (loading) {
+  useEffect(() => { setLoading(true); load() }, [load, user?.id])
+
+  if (loading) return <div className="space-y-4"><CardSkeleton /><CardSkeleton /></div>
+
+  if (error || !request) {
     return (
-      <div className="flex items-center justify-center min-h-[350px]">
-        <div className="w-7 h-7 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="card text-center">
+        <p className="text-sm text-slate-600">{error || 'This request does not exist, or you do not have access to it.'}</p>
+        <Link to="/requests" className="btn-secondary mt-4">Back to requests</Link>
       </div>
     )
   }
 
-  if (!request) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-xs text-slate-500">Request not found.</p>
-        <button onClick={() => navigate('/requests')} className="btn-secondary mt-3">
-          Back to Requests
-        </button>
-      </div>
-    )
-  }
-
-  // Role & Pool Identification
-  const role = user?.role
-  const userDept = user?.department || ''
-  const isAmaPool = role === 'ama_officer' || role === 'ama_head' || role === 'admin' || userDept.includes('Asset') || userDept.includes('Archive') || userDept.includes('AMA')
-  const isTransportPool = role === 'transport_head' || role === 'transport_officer' || role === 'admin' || userDept.includes('Transport') || userDept.includes('Logistics') || userDept.includes('Fleet')
-
-  // Pool Actions Eligibility
-  const canApproveHead = (role === 'department_head' || role === 'admin') && request.status === 'pending_head'
-  const canApproveAmaPool = isAmaPool && request.status === 'head_approved'
-  const canCloseAmaPool = isAmaPool && request.status === 'transport_completed'
-  const canAct = canApproveHead || canApproveAmaPool || canCloseAmaPool
-
-  const handleApprove = async () => {
-    setActionLoading(true)
-    let approved = false
-    try {
-      await api.post(`/requests/${id}/approve`, { remarks })
-      approved = true
-      toast.success('Action submitted successfully')
-      setRemarks('')
-    } catch (err) {
-      toast.error(err.response?.data?.error || err.message || 'Approval failed.')
-    } finally {
-      setActionLoading(false)
-    }
-
-    if (approved) {
-      try {
-        await load()
-      } catch (loadErr) {
-        console.warn('Failed to reload request detail:', loadErr)
-      }
-    }
-  }
-
-  const handleReject = async () => {
-    if (!remarks.trim()) {
-      toast.error('Please specify rejection reasons in remarks.')
-      return
-    }
-    setActionLoading(true)
-    let rejected = false
-    try {
-      await api.post(`/requests/${id}/reject`, { remarks })
-      rejected = true
-      toast.success('Request rejected.')
-      setRemarks('')
-    } catch (err) {
-      toast.error(err.response?.data?.error || err.message || 'Rejection failed.')
-    } finally {
-      setActionLoading(false)
-    }
-
-    if (rejected) {
-      try {
-        await load()
-      } catch (loadErr) {
-        console.warn('Failed to reload request detail:', loadErr)
-      }
-    }
-  }
-
-  const handleClose = async () => {
-    setActionLoading(true)
-    let closed = false
-    try {
-      await api.post(`/requests/${id}/close`, { remarks })
-      closed = true
-      toast.success('Fixed Asset Register updated and request closed!')
-      setRemarks('')
-    } catch (err) {
-      toast.error(err.response?.data?.error || err.message || 'Closure failed.')
-    } finally {
-      setActionLoading(false)
-    }
-
-    if (closed) {
-      try {
-        await load()
-      } catch (loadErr) {
-        console.warn('Failed to reload request detail:', loadErr)
-      }
-    }
-  }
-
-  const analytics = calculateStageDurations(request)
+  const task = request.transport_task
+  const isItMove = request.fulfillment_type === 'it'
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto font-sans">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
-        <div>
-          <button
-            onClick={() => navigate('/requests')}
-            className="inline-flex items-center gap-1.5 text-xs text-blue-700 hover:text-blue-900 font-medium mb-2 transition"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to Requests
-          </button>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900 font-mono">
-              {request.reference_no}
-            </h1>
-            <StatusBadge status={request.status} fulfillmentType={request.fulfillment_type || request.transport_task?.fulfillment_type} />
-            {analytics?.currentStagePendingFormatted && !analytics.isClosed && (
-              <span className="text-[11px] font-semibold text-blue-800 bg-blue-100/70 px-2.5 py-1 rounded-full border border-blue-200 flex items-center gap-1">
-                <Clock className="w-3 h-3 text-blue-600 animate-pulse" />
-                Pended: {analytics.currentStagePendingFormatted}
-              </span>
-            )}
-            {analytics?.isClosed && (
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100/70 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  Turnaround: {analytics.totalDurationFormatted}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('sheet')
-                    const prevTitle = document.title
-                    document.title = `Official_Fixed_Asset_Movement_Form_${request.reference_no || 'Document'}`
-                    setTimeout(() => {
-                      window.print()
-                      setTimeout(() => { document.title = prevTitle }, 1500)
-                    }, 150)
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold shadow-xs transition"
-                  title="Download Completed Official Movement Form as PDF"
-                >
-                  <Download className="w-3 h-3 text-emerald-100" />
-                  <span>Download Official Form (PDF)</span>
-                </button>
-              </div>
-            )}
+    <div className="space-y-6">
+      <div className="print:hidden">
+        <Link to="/requests" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Requests
+        </Link>
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-mono text-xl font-semibold text-slate-900 sm:text-2xl">{request.reference_no}</h1>
+              <StatusBadge status={request.status} fulfillmentType={request.fulfillment_type} />
+              <PriorityTag priority={request.priority} />
+            </div>
+            <p className="page-subtitle">
+              Requested by {request.requester_name}
+              {request.requester_department ? ` · ${request.requester_department}` : ''} · {formatDateTime(request.created_at)}
+            </p>
           </div>
-        </div>
-
-        {/* Tab Toggle: Sheet | Audit Log & Stage Durations | Workflow & Assets */}
-        <div className="flex items-center p-1 bg-blue-50/70 rounded-xl border border-blue-200 text-xs">
-          <button
-            onClick={() => setActiveTab('sheet')}
-            className={`px-3 py-1.5 font-semibold rounded-lg transition ${
-              activeTab === 'sheet'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-blue-900 hover:text-blue-950'
-            }`}
-          >
-            Official Sheet
-          </button>
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`px-3 py-1.5 font-semibold rounded-lg transition flex items-center gap-1.5 ${
-              activeTab === 'audit'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-blue-900 hover:text-blue-950'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>Audit &amp; Stage Durations</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('workflow')}
-            className={`px-3 py-1.5 font-semibold rounded-lg transition ${
-              activeTab === 'workflow'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-blue-900 hover:text-blue-950'
-            }`}
-          >
-            Workflow &amp; Assets
-          </button>
+          {request.status === 'closed' && (
+            <button type="button" className="btn-secondary self-start" onClick={() => { setTab('form'); setTimeout(() => window.print(), 150) }}>
+              <Printer className="h-4 w-4" aria-hidden="true" /> Print form
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Reviewer Action Callout */}
-      {canAct && (
-        <div className="bg-white border-2 border-blue-200 rounded-2xl p-5 shadow-sm space-y-3 print:hidden">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-blue-950 flex items-center gap-2">
-                  <span>
-                    {canApproveHead && 'Department Head Action Required'}
-                    {(canApproveAmaPool || canCloseAmaPool) && 'Asset Management \& Archives Department Pool Action'}
-                  </span>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200 uppercase font-sans">
-                    {canApproveHead ? 'Unit Review' : 'AMA Pool Member'}
-                  </span>
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Acting Officer: <strong className="text-blue-900">{user?.name}</strong> &bull; {user?.job_title || user?.department || user?.role?.replace(/_/g, ' ')}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-600 bg-blue-50/50 p-2.5 rounded-lg border border-blue-100/70">
-            {canApproveHead && 'Review the present location, destination, and asset schedule before giving departmental approval.'}
-            {canApproveAmaPool && (request.fulfillment_type === 'it'
-              ? 'As a member of the Asset Management \& Archives Department Pool, verify asset codes and tags, then authorize movement dispatch to the IT Infrastructure & Systems Pool.'
-              : 'As a member of the Asset Management \& Archives Department Pool, verify asset codes and tags, then authorize movement dispatch to the Transport & Logistics Pool.')}
-            {canCloseAmaPool && 'Logistics fulfillment has confirmed physical delivery. As a member of the Asset Management \& Archives Department Pool, verify and update the Fixed Asset Register records to formally close this request.'}
+      <div className="card print:hidden">
+        <StageProgress request={request} />
+        {request.status === 'rejected' && (
+          <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+            <strong className="font-medium">Rejected{request.rejected_by_name ? ` by ${request.rejected_by_name}` : ''}{request.rejected_at ? ` on ${formatDate(request.rejected_at)}` : ''}.</strong>{' '}
+            {request.rejection_remarks}
           </p>
+        )}
+      </div>
 
-          <div>
-            <label className="label">Verification Notes / Remarks</label>
-            <input
-              type="text"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="e.g. Asset codes verified against register. Approved for relocation."
-              className="input-field text-xs"
-            />
-          </div>
+      <ActionPanel request={request} user={user} onDone={load} />
 
-          <div className="flex items-center justify-end gap-2.5 pt-1">
-            {!canCloseAmaPool && (
-              <button
-                type="button"
-                onClick={handleReject}
-                disabled={actionLoading}
-                className="btn-danger"
-              >
-                <XCircle className="w-4 h-4" /> Reject
-              </button>
-            )}
-
-            {canCloseAmaPool ? (
-              <button
-                type="button"
-                onClick={handleClose}
-                disabled={actionLoading}
-                className="btn-primary"
-              >
-                <FileCheck className="w-4 h-4" />
-                {actionLoading ? 'Closing...' : 'Confirm Register Update & Close Request'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleApprove}
-                disabled={actionLoading}
-                className="btn-primary"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                {actionLoading
-                  ? 'Processing...'
-                  : canApproveAmaPool
-                  ? (request.fulfillment_type === 'it'
-                      ? 'Verify & Authorize (Dispatch to IT Pool)'
-                      : 'Verify & Authorize (Dispatch to Transport Pool)')
-                  : 'Approve & Forward'}
-              </button>
-            )}
-          </div>
+      <div className="border-b border-slate-200 print:hidden" role="tablist" aria-label="Request views">
+        <div className="-mb-px flex gap-6 overflow-x-auto">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              className={`shrink-0 border-b-2 pb-2.5 text-sm font-medium transition-colors ${
+                tab === t.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
-      {/* Logistics Active Notification */}
-      {request.transport_task && (
-        <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-4 flex items-center justify-between gap-4 print:hidden">
-          <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-lg text-white flex items-center justify-center shrink-0 shadow-sm ${
-              request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it'
-                ? 'bg-indigo-600 shadow-indigo-500/20'
-                : 'bg-blue-600 shadow-blue-500/20'
-            }`}>
-              {request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it'
-                ? <Server className="w-5 h-5" />
-                : <Truck className="w-5 h-5" />}
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-blue-950">
-                {request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it'
-                  ? `IT Logistics Task #${request.transport_task.id} • IT Infrastructure Fulfillment`
-                  : `Logistics Task #${request.transport_task.id} • Transport & Logistics Fulfillment`}
-              </p>
-              <p className="text-[11px] text-blue-800 mt-0.5">
-                Status: <span className="font-semibold text-blue-900">{request.transport_task.status.replace(/_/g, ' ')}</span>
-                {request.transport_task.assigned_officer_name && ` • ${request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it' ? 'IT Officer' : 'Officer'}: ${request.transport_task.assigned_officer_name}`}
-                {request.transport_task.driver_name && ` • ${request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it' ? 'Escort' : 'Driver'}: ${request.transport_task.driver_name}`}
-                {request.transport_task.vehicle_details && ` • ${request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it' ? 'Carrier' : 'Vehicle'}: ${request.transport_task.vehicle_details}`}
-              </p>
-            </div>
-          </div>
-          <Link
-            to={request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it'
-              ? `/it-logistics/${request.transport_task.id}`
-              : `/transport/${request.transport_task.id}`}
-            className="btn-secondary py-1.5 px-3 text-xs shrink-0"
-          >
-            {request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it'
-              ? 'Open IT Task →'
-              : 'Open Logistics Task →'}
-          </Link>
-        </div>
-      )}
+      {tab === 'details' && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+          <div className="min-w-0 space-y-6 lg:col-span-3">
+            <section className="card">
+              <h2 className="section-title">Movement</h2>
+              <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+                <Field label="From">{request.present_location}</Field>
+                <Field label="To">{request.new_location}</Field>
+                <div className="sm:col-span-2"><Field label="Purpose">{request.purpose}</Field></div>
+                <Field label="Requested move date">{formatDate(request.movement_date)}</Field>
+                <Field label="Handled by">{isItMove ? 'IT pool' : 'Transport pool'}</Field>
+                <Field label="Officer doing the movement">{request.officer_doing_movement}</Field>
+                <Field label="Authorizing head (named on form)">{request.authorized_by}</Field>
+              </dl>
+            </section>
 
-      {/* Tab Content: Official Movement Sheet */}
-      {activeTab === 'sheet' && (
-        <MovementFormView request={request} />
-      )}
-
-      {/* Tab Content: Audit History & Stage Durations (SLA Tracking) */}
-      {activeTab === 'audit' && (
-        <div className="print:hidden">
-          <RequestAuditHistory request={request} auditLog={request.audit_log} />
-        </div>
-      )}
-
-      {/* Tab Content: Workflow & Audit Trail */}
-      {activeTab === 'workflow' && (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 print:hidden">
-          <div className="md:col-span-7 space-y-6">
-            {/* Asset Items Summary */}
-            <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-6 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-blue-900">
-                Asset Items Schedule ({request.items?.length || 0} items)
-              </h3>
-              <div className="border border-blue-100 rounded-xl overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead className="bg-blue-50/70 border-b border-blue-100 text-blue-900 font-semibold uppercase text-[10px]">
+            <section className="card-flat overflow-hidden">
+              <h2 className="section-title px-5 pt-5">Assets ({request.items.length})</h2>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-y border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
                     <tr>
-                      <th className="px-4 py-2.5 text-center w-12">No.</th>
-                      <th className="px-4 py-2.5 text-left">Asset Name</th>
-                      <th className="px-4 py-2.5 text-left w-44">Asset Code</th>
+                      <th scope="col" className="w-12 px-5 py-2 font-medium">#</th>
+                      <th scope="col" className="px-3 py-2 font-medium">Asset</th>
+                      <th scope="col" className="px-5 py-2 font-medium">Asset code</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-blue-50">
-                    {request.items?.map((it, i) => (
-                      <tr key={i} className="hover:bg-blue-50/40 transition">
-                        <td className="px-4 py-2 text-center text-slate-400 font-medium">{it.item_no}</td>
-                        <td className="px-4 py-2 text-slate-900 font-medium">{it.name_of_asset}</td>
-                        <td className="px-4 py-2 font-mono text-blue-700">{it.asset_code}</td>
+                  <tbody className="divide-y divide-slate-100">
+                    {request.items.map((it, i) => (
+                      <tr key={it.id || i}>
+                        <td className="px-5 py-2.5 text-slate-400">{it.item_no || i + 1}</td>
+                        <td className="px-3 py-2.5 text-slate-900">{it.name_of_asset}</td>
+                        <td className="px-5 py-2.5 font-mono text-[13px] text-slate-700">{it.asset_code || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </section>
 
-            {/* Audit Trail */}
-            <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-6 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-blue-900">
-                Audit Trail
-              </h3>
-              <div className="space-y-2">
-                {request.audit_log?.map((log, i) => (
-                  <div key={i} className="p-3 bg-blue-50/30 rounded-xl border border-blue-100/70 text-xs flex items-start justify-between gap-3">
-                    <div>
-                      <span className="font-semibold text-slate-900">{log.action.replace(/_/g, ' ')}</span>
-                      <span className="text-slate-500 text-[11px]"> by {log.performed_by_name || 'System'}</span>
-                      {log.remarks && (
-                        <p className="text-slate-600 mt-0.5 text-[11px] italic">"{log.remarks}"</p>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-slate-400 whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {task && (
+              <Link to={taskPath(task)} className="card flex items-center gap-4 transition-colors hover:border-slate-300">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                  {isItMove ? <Server className="h-5 w-5" aria-hidden="true" /> : <Truck className="h-5 w-5" aria-hidden="true" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-900">{isItMove ? 'IT move' : 'Transport move'}: {statusLabel(task.status)}</p>
+                  <p className="truncate text-sm text-slate-500">
+                    {[task.assigned_officer_name, task.vehicle_details, task.scheduled_date && formatDate(task.scheduled_date)].filter(Boolean).join(' · ') || 'Not scheduled yet'}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-slate-400" aria-hidden="true" />
+              </Link>
+            )}
           </div>
 
-          {/* Right Column: Timeline */}
-          <div className="md:col-span-5">
-            <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-6 space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-blue-900">
-                Approval Lifecycle
-              </h3>
-              <ApprovalTimeline request={request} />
-            </div>
-          </div>
+          <section className="card min-w-0 lg:col-span-2">
+            <h2 className="section-title mb-4">Activity</h2>
+            <ActivityLog entries={request.audit_log} />
+          </section>
         </div>
       )}
+
+      {tab === 'form' && <MovementFormView request={request} />}
+      {tab === 'timing' && <RequestAuditHistory request={request} auditLog={request.audit_log} />}
     </div>
   )
 }

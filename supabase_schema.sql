@@ -212,19 +212,57 @@ CREATE SCHEMA IF NOT EXISTS private;
 REVOKE ALL ON SCHEMA private FROM PUBLIC;
 GRANT USAGE ON SCHEMA private TO authenticated;
 
--- public.users.id of the signed-in user (NULL if not signed in / no profile)
+-- ---------------------------------------------------------------------------
+-- ACCESS MODE
+--   'login' (default): every user signs in with Supabase Auth.
+--   'open'           : no login page. Visitors get an anonymous Supabase
+--                      session and choose which staff profile to act as.
+--                      ANYONE WITH THE LINK CAN ACT AS ANY USER, INCLUDING
+--                      ADMIN. Workflow rules and the audit trail still apply.
+-- Switch with:
+--   UPDATE private.settings SET value = 'open'  WHERE key = 'access_mode';
+--   UPDATE private.settings SET value = 'login' WHERE key = 'access_mode';
+-- Re-running this script never changes the current mode.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS private.settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+INSERT INTO private.settings (key, value) VALUES ('access_mode', 'login')
+ON CONFLICT (key) DO NOTHING;
+
+-- Which staff profile each anonymous (open-mode) session is acting as.
+CREATE TABLE IF NOT EXISTS private.acting_as (
+  auth_id    UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id    BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION private.open_access()
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$ SELECT COALESCE((SELECT value = 'open' FROM private.settings WHERE key = 'access_mode'), false) $$;
+
+-- public.users.id of the current user (NULL if not signed in / no profile).
+-- A real linked account always wins; the open-mode choice only counts while
+-- access_mode = 'open'.
 CREATE OR REPLACE FUNCTION private.app_user_id()
 RETURNS BIGINT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT u.id FROM public.users u WHERE u.auth_id = (SELECT auth.uid()) $$;
+AS $$
+  SELECT COALESCE(
+    (SELECT u.id FROM public.users u WHERE u.auth_id = (SELECT auth.uid())),
+    (SELECT a.user_id FROM private.acting_as a
+      WHERE a.auth_id = (SELECT auth.uid()) AND private.open_access())
+  )
+$$;
 
--- Role of the signed-in user (NULL if not signed in / no profile)
+-- Role of the current user (NULL if not signed in / no profile)
 CREATE OR REPLACE FUNCTION private.app_role()
 RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT u.role FROM public.users u WHERE u.auth_id = (SELECT auth.uid()) $$;
+AS $$ SELECT u.role FROM public.users u WHERE u.id = private.app_user_id() $$;
 
 CREATE OR REPLACE FUNCTION private.app_user_name()
 RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT u.name FROM public.users u WHERE u.auth_id = (SELECT auth.uid()) $$;
+AS $$ SELECT u.name FROM public.users u WHERE u.id = private.app_user_id() $$;
 
 -- TRUE when the statement comes from the Data API as an end user, based on the
 -- request's JWT role (works inside SECURITY DEFINER functions too).
@@ -238,6 +276,82 @@ $$;
 
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA private FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION private.app_user_id(), private.app_role(), private.app_user_name(), private.is_api_user() TO authenticated;
+REVOKE ALL ON private.settings, private.acting_as FROM PUBLIC, anon, authenticated;
+
+
+-- ---------------------------------------------------------------------------
+-- PUBLIC RPC FUNCTIONS (called by the app)
+-- ---------------------------------------------------------------------------
+
+-- Which mode the app should start in. Safe to expose: returns only the mode.
+CREATE OR REPLACE FUNCTION public.app_mode()
+RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$ SELECT CASE WHEN private.open_access() THEN 'open' ELSE 'login' END $$;
+
+-- The current user's own profile (works in both modes).
+CREATE OR REPLACE FUNCTION public.my_profile()
+RETURNS TABLE (id BIGINT, name TEXT, email TEXT, role TEXT, department TEXT, staff_id TEXT)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT u.id, u.name, u.email, u.role, u.department, u.staff_id
+    FROM public.users u WHERE u.id = private.app_user_id()
+$$;
+
+-- Open mode only: staff list for the "acting as" switcher.
+CREATE OR REPLACE FUNCTION public.open_access_staff()
+RETURNS TABLE (id BIGINT, name TEXT, email TEXT, role TEXT, department TEXT, staff_id TEXT)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT u.id, u.name, u.email, u.role, u.department, u.staff_id
+    FROM public.users u
+   WHERE private.open_access() AND (SELECT auth.uid()) IS NOT NULL
+   ORDER BY u.name
+$$;
+
+-- Open mode only: choose which staff profile this session acts as.
+CREATE OR REPLACE FUNCTION public.open_access_act_as(p_user_id BIGINT)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF NOT private.open_access() THEN
+    RAISE EXCEPTION 'Open access is disabled. Please sign in.' USING ERRCODE = '42501';
+  END IF;
+  IF (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'No session.' USING ERRCODE = '42501';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = p_user_id) THEN
+    RAISE EXCEPTION 'Unknown staff profile.' USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO private.acting_as (auth_id, user_id) VALUES ((SELECT auth.uid()), p_user_id)
+  ON CONFLICT (auth_id) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = now();
+END $$;
+
+-- Open mode only, and only while there are no staff profiles yet:
+-- create the first administrator so the system can be set up.
+CREATE OR REPLACE FUNCTION public.open_access_bootstrap_admin(p_name TEXT, p_email TEXT)
+RETURNS BIGINT LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE v_id BIGINT;
+BEGIN
+  IF NOT private.open_access() OR (SELECT auth.uid()) IS NULL THEN
+    RAISE EXCEPTION 'Open access is disabled.' USING ERRCODE = '42501';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.users) THEN
+    RAISE EXCEPTION 'Staff profiles already exist.' USING ERRCODE = '42501';
+  END IF;
+  INSERT INTO public.users (name, email, role, department)
+  VALUES (trim(p_name), lower(trim(p_email)), 'admin', 'Administration')
+  RETURNING id INTO v_id;
+  INSERT INTO private.acting_as (auth_id, user_id) VALUES ((SELECT auth.uid()), v_id)
+  ON CONFLICT (auth_id) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = now();
+  RETURN v_id;
+END $$;
+
+REVOKE ALL ON FUNCTION public.app_mode(), public.my_profile(), public.open_access_staff(),
+  public.open_access_act_as(BIGINT), public.open_access_bootstrap_admin(TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.app_mode() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.my_profile(), public.open_access_staff(),
+  public.open_access_act_as(BIGINT), public.open_access_bootstrap_admin(TEXT, TEXT) TO authenticated;
 
 
 -- =============================================================================

@@ -134,6 +134,48 @@ expect_ok run_as admin@bank.com "update public.users set role='department_head' 
 expect_eq "4" run_as aud@bank.com "select count(*) from public.movement_requests;"
 expect_eq "0" run_as aud@bank.com "with u as (update public.movement_requests set status='closed' returning 1) select count(*) from u;"
 
+echo "== Access mode: login (default)"
+$P -c "insert into auth.users(id,email) values ('00000000-0000-0000-0000-00000000a001',null)"
+ANON_SUB=00000000-0000-0000-0000-00000000a001
+run_anon_session() { $P -v ON_ERROR_STOP=1 2>&1 <<SQL
+begin; set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"$ANON_SUB","role":"authenticated","is_anonymous":true}', true) \\gset
+$1
+commit;
+SQL
+}
+expect_eq "login" run_anon "select public.app_mode();"
+expect_eq "0" run_anon_session "select count(*) from public.open_access_staff();"
+expect_err "Open access is disabled" run_anon_session "select public.open_access_act_as(1);"
+expect_eq "0" run_anon_session "select count(*) from public.movement_requests;"
+expect_err "permission denied" run_anon "select public.open_access_staff();"
+
+echo "== Access mode: open"
+$P -c "update private.settings set value='open' where key='access_mode'"
+expect_eq "open" run_anon "select public.app_mode();"
+expect_eq "t" run_anon_session "select count(*) > 5 from public.open_access_staff();"
+expect_ok run_anon_session "select public.open_access_act_as(2);"
+expect_eq "Rita Requester|requesting_officer" run_anon_session "select name, role from public.my_profile();"
+expect_ok run_anon_session "insert into public.movement_requests(reference_no,present_location,new_location,purpose) values ('x','A','B','open-mode');"
+expect_eq "2" $P -c "select requesting_officer_id from public.movement_requests where purpose='open-mode'"
+OID=$($P -c "select id from public.movement_requests where purpose='open-mode'")
+expect_eq "0" run_anon_session "with u as (update public.movement_requests set status='head_approved' where id=$OID returning 1) select count(*) from u;"
+expect_ok run_anon_session "select public.open_access_act_as(3);"
+expect_ok run_anon_session "update public.movement_requests set status='head_approved' where id=$OID;"
+expect_eq "Dan Head" $P -c "select head_approved_name from public.movement_requests where id=$OID"
+expect_err "permission denied" run_anon "select count(*) from public.movement_requests;"
+expect_err "already exist" run_anon_session "select public.open_access_bootstrap_admin('X','x@x.com');"
+expect_err "Unknown staff" run_anon_session "select public.open_access_act_as(999999);"
+# A real signed-in account is unaffected by open mode
+expect_eq "Rita Requester" run_as rita@bank.com "select name from public.my_profile();"
+
+echo "== Back to login mode"
+$P -c "update private.settings set value='login' where key='access_mode'"
+expect_eq "0" run_anon_session "select count(*) from public.movement_requests;"
+expect_eq "0" run_anon_session "select count(*) from public.my_profile();"
+expect_eq "Dan Head" run_as dan@bank.com "select name from public.my_profile();"
+expect_eq "login" $P -c "select value from private.settings where key='access_mode'"
+
 echo
 echo "PASSED: $PASS   FAILED: $FAIL"
 [ "$FAIL" -eq 0 ]
