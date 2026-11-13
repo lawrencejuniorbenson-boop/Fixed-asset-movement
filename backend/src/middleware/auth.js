@@ -7,9 +7,22 @@
  * authorize     — factory that accepts allowed roles and 403s on mismatch
  */
 
+import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
-export const JWT_SECRET = process.env.JWT_SECRET || 'FAM_ENTERPRISE_JWT_SECRET_2026_SECURE';
+// Never fall back to a secret that is published in the source code: anyone
+// could use it to forge an admin token.
+function resolveJwtSecret() {
+  const fromEnv = process.env.JWT_SECRET;
+  if (fromEnv && fromEnv.length >= 32) return fromEnv;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET must be set (at least 32 characters) in production.');
+  }
+  console.warn('[auth] JWT_SECRET not set (or shorter than 32 chars): using a random per-process secret. Sessions end when the server restarts.');
+  return crypto.randomBytes(48).toString('hex');
+}
+
+export const JWT_SECRET = resolveJwtSecret();
 
 /**
  * Middleware: verify JWT from Authorization: Bearer <token> header.

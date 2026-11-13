@@ -199,6 +199,15 @@ export function populateRequestRecord(r) {
   }
 }
 
+// Row Level Security hides rows a user may not change, so a blocked UPDATE
+// affects 0 rows without raising an error. Re-read and confirm it applied.
+async function assertStatus(supabase, table, id, expected) {
+  const { data } = await supabase.from(table).select('status').eq('id', id).maybeSingle()
+  if (!data || data.status !== expected) {
+    throw new Error('You are not authorized to perform this action at the current stage.')
+  }
+}
+
 export const supabaseDataService = {
   // ── STATS ───────────────────────────────────────────────────────────────────
   async getStats(role, userId) {
@@ -344,20 +353,8 @@ export const supabaseDataService = {
     const supabase = getSupabase()
     if (!supabase) throw new Error('Supabase is not configured')
 
-    // Generate reference number cleanly without colliding with deleted IDs
-    const year = new Date().getFullYear()
-    const { data: latestReqs } = await supabase
-      .from('movement_requests')
-      .select('id')
-      .order('id', { ascending: false })
-      .limit(1)
-    const { count } = await supabase
-      .from('movement_requests')
-      .select('*', { count: 'exact', head: true })
-    const maxId = latestReqs && latestReqs.length > 0 ? Number(latestReqs[0].id) : 0
-    const nextSeq = String(Math.max(count || 0, maxId) + 1).padStart(4, '0')
-    const reference_no = `FAM-${year}-${nextSeq}`
-
+    // reference_no, requesting officer and initial status are set by the
+    // database (see movement_request_before_insert in supabase_schema.sql).
     const { items = [], ...formData } = payload
     const userId = user?.id && !isNaN(Number(user.id)) ? Number(user.id) : null
 
@@ -370,7 +367,6 @@ export const supabaseDataService = {
 
     // 1. Insert Movement Request
     const insertPayload = {
-      reference_no,
       requesting_officer_id: userId,
       requesting_officer_staff_id: formData.requesting_officer_staff_id || user?.staff_id || null,
       present_location: formData.present_location,
@@ -433,7 +429,7 @@ export const supabaseDataService = {
         .from('movement_items')
         .insert(itemsToInsert)
 
-      if (itemError) console.error('Error inserting items:', itemError)
+      if (itemError) throw itemError
     }
 
     // 3. Log Audit
@@ -494,37 +490,8 @@ export const supabaseDataService = {
       updates.ama_head_remarks = remarks || 'Final approval granted. Relocation task initiated.'
       auditAction = 'FINAL_AUTHORIZATION_BY_AMA_POOL'
 
-      // Automatically create fulfillment task for Transport or IT Infrastructure
-      const isItMove = request.fulfillment_type === 'it' || 
-        (request.items && request.items.some(i => {
-          const n = (i.name_of_asset || '').toLowerCase();
-          return n.includes('server') || n.includes('switch') || n.includes('rack') || n.includes('router') || n.includes('ups') || n.includes('cisco');
-        }));
-      const taskType = isItMove ? 'it' : 'transport';
-
-      try {
-        const { data: existingTask } = await supabase
-          .from('transport_tasks')
-          .select('id')
-          .eq('movement_request_id', id)
-          .maybeSingle()
-
-        if (!existingTask) {
-          const taskPayload = {
-            movement_request_id: Number(id),
-            fulfillment_type: taskType,
-            scheduled_date: request.movement_date,
-            status: 'pending_assignment'
-          }
-          let { error: taskErr } = await supabase.from('transport_tasks').insert(taskPayload)
-          if (taskErr && (taskErr.message?.includes('fulfillment_type') || taskErr.code === 'PGRST204')) {
-            delete taskPayload.fulfillment_type
-            await supabase.from('transport_tasks').insert(taskPayload)
-          }
-        }
-      } catch (taskErr) {
-        console.warn('[approveRequest transport_task warning]', taskErr)
-      }
+      // The Transport / IT fulfillment task is created by the database when
+      // the status becomes fully_approved (movement_request_after_update).
     }
 
     let { error } = await supabase
@@ -554,6 +521,7 @@ export const supabaseDataService = {
     }
 
     if (error) throw error
+    await assertStatus(supabase, 'movement_requests', id, updates.status)
 
     try {
       await supabase.from('audit_log').insert({
@@ -583,6 +551,7 @@ export const supabaseDataService = {
       .eq('id', id)
 
     if (error) throw error
+    await assertStatus(supabase, 'movement_requests', id, 'rejected')
 
     const numericUserId = user?.id && !isNaN(Number(user.id)) ? Number(user.id) : null
     try {
@@ -632,6 +601,7 @@ export const supabaseDataService = {
     }
 
     if (error) throw error
+    await assertStatus(supabase, 'movement_requests', id, 'closed')
 
     try {
       await supabase.from('audit_log').insert({
@@ -819,20 +789,14 @@ export const supabaseDataService = {
     if (existing) {
       throw new Error('A user with this email already exists.')
     }
-    const { data: allUsers } = await supabase
-      .from('users')
-      .select('id')
-      .order('id', { ascending: false })
-      .limit(1)
-    const nextId = (allUsers && allUsers.length > 0 ? Number(allUsers[0].id) : 0) + 1
+    // Pre-registration only: the person activates it by signing up with this
+    // email (Supabase Auth). Passwords are never stored in this table.
     const payload = {
-      id: nextId,
       name: (userData.name || '').trim(),
       email: trimmedEmail,
-      password: userData.password,
       role: userData.role || 'requesting_officer',
       department: (userData.department || '').trim() || 'Operations',
-      staff_id: (userData.staff_id || '').trim() || `EMP-${String(nextId).padStart(4, '0')}`
+      staff_id: (userData.staff_id || '').trim() || null
     }
     const { data, error } = await supabase
       .from('users')
@@ -920,6 +884,7 @@ export const supabaseDataService = {
     }
 
     if (error) throw error
+    await assertStatus(supabase, 'transport_tasks', id, 'officer_assigned')
 
     // Add Audit Log
     const currentTask = await this.getTransportTaskById(id)
@@ -967,6 +932,7 @@ export const supabaseDataService = {
       console.error('[startTransport error]', taskError)
       throw new Error(taskError.message || 'Failed to update transport task status.')
     }
+    await assertStatus(supabase, 'transport_tasks', id, 'in_progress')
 
     // 2. Update parent movement_request status to in_transport
     const { error: reqError } = await supabase
@@ -1022,6 +988,7 @@ export const supabaseDataService = {
       console.error('[completeTransport error]', taskError)
       throw new Error(taskError.message || 'Failed to complete transport task.')
     }
+    await assertStatus(supabase, 'transport_tasks', id, 'completed')
 
     // Update parent movement_request to transport_completed
     const { error: reqError } = await supabase

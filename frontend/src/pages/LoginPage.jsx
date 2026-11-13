@@ -36,7 +36,6 @@ export default function LoginPage() {
   const [regName, setRegName] = useState('')
   const [regEmail, setRegEmail] = useState('')
   const [regPassword, setRegPassword] = useState('')
-  const [regRole, setRegRole] = useState('requesting_officer')
   const [regDept, setRegDept] = useState('Banking Operations')
   const [regStaffId, setRegStaffId] = useState('')
 
@@ -71,16 +70,22 @@ export default function LoginPage() {
 
       setLoading(true)
       try {
-        const authUser = await register({
+        const result = await register({
           name: regName.trim(),
           email: regEmail.trim().toLowerCase(),
           password: regPassword,
-          role: regRole,
-          department: regDept.trim() || 'Banking Operations',
-          staff_id: regStaffId.trim() || `EMP-${Math.floor(1000 + Math.random() * 9000)}`
+          department: regDept.trim(),
+          staff_id: regStaffId.trim()
         })
-        toast.success(`Account registered! Signed in as ${authUser.name}`)
-        navigate('/dashboard')
+        if (result.needsConfirmation) {
+          toast.success('Account created. Check your email to confirm it, then sign in.')
+          setMode('signin')
+          setEmail(regEmail.trim().toLowerCase())
+          setRegPassword('')
+        } else {
+          toast.success(`Account registered! Signed in as ${result.user.name}`)
+          navigate('/dashboard')
+        }
       } catch (err) {
         setError(err.message || 'Registration failed.')
       } finally {
@@ -183,8 +188,8 @@ export default function LoginPage() {
                 </h1>
                 <p className="text-xs text-slate-600 mt-0.5">
                   {mode === 'signin'
-                    ? 'Authenticate with your corporate email. Credentials are saved directly to Supabase.'
-                    : 'Create a new staff profile with role attribution and save credentials to Supabase.'}
+                    ? 'Sign in with your corporate email and password.'
+                    : 'Create your staff account. You will receive an email to confirm it.'}
                 </p>
               </div>
 
@@ -323,7 +328,8 @@ export default function LoginPage() {
                             type={showPassword ? 'text' : 'password'}
                             value={regPassword}
                             onChange={(e) => setRegPassword(e.target.value)}
-                            placeholder="At least 6 characters"
+                            placeholder="At least 8 characters"
+                            minLength={8}
                             required
                             className="w-full px-3 pr-10 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 transition"
                           />
@@ -337,28 +343,10 @@ export default function LoginPage() {
                         </div>
                       </div>
 
-                      {/* Role Selector */}
-                      <div>
-                        <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                          Assigned Portal Role <span className="text-rose-500">*</span>
-                        </label>
-                        <select
-                          value={regRole}
-                          onChange={(e) => setRegRole(e.target.value)}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer transition"
-                        >
-                          <option value="requesting_officer">Requesting Officer (Initiator)</option>
-                          <option value="department_head">Requesting Department Head (Review &amp; Approval)</option>
-                          <option value="ama_officer">Asset Management \&amp; Archives Department (Pool Member)</option>
-                          <option value="ama_head">Asset Management \&amp; Archives Department (Pool Member)</option>
-                          <option value="transport_head">Transport &amp; Logistics Department (Pool Member)</option>
-                          <option value="transport_officer">Transport &amp; Logistics Department (Pool Member)</option>
-                          <option value="it_head">IT Infrastructure &amp; Systems Department (Pool Member)</option>
-                          <option value="it_officer">IT Infrastructure &amp; Systems Department (Pool Member)</option>
-                          <option value="auditor">Internal Auditor &amp; Compliance Inspector</option>
-                          <option value="admin">System Administrator</option>
-                        </select>
-                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        New accounts start as <strong>Requesting Officer</strong>. Approver, pool and
+                        admin roles are assigned by a System Administrator.
+                      </p>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -398,11 +386,11 @@ export default function LoginPage() {
                     {loading ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Saving Credentials to Supabase...</span>
+                        <span>{mode === 'signin' ? 'Signing in...' : 'Creating account...'}</span>
                       </>
                     ) : (
                       <>
-                        <span>{mode === 'signin' ? 'Sign In & Save Credentials' : 'Register & Save to Supabase'}</span>
+                        <span>{mode === 'signin' ? 'Sign In' : 'Create Account'}</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}

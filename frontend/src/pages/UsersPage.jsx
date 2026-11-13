@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Users, Plus, X, Eye, EyeOff, UserCheck, ShieldAlert, Trash2 } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
+import { isSupabaseConfigured } from '../lib/supabase'
 import { useToast } from '../context/ToastContext'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 
@@ -21,6 +22,9 @@ const ROLES = [
 const DEFAULT_FORM = { name: '', email: '', password: '', role: 'requesting_officer', department: '', staff_id: '' }
 
 export default function UsersPage() {
+  // With Supabase, passwords are owned by Supabase Auth: the admin pre-registers
+  // the email + role, and the staff member signs up with that email to activate it.
+  const supabaseMode = isSupabaseConfigured()
   const { user } = useAuth()
   const toast = useToast()
   const [users, setUsers] = useState([])
@@ -67,7 +71,7 @@ export default function UsersPage() {
     const e = {}
     if (!form.name.trim()) e.name = 'Name is required.'
     if (!form.email.trim()) e.email = 'Email is required.'
-    if (!form.password || form.password.length < 6) e.password = 'Password must be at least 6 characters.'
+    if (!supabaseMode && (!form.password || form.password.length < 8)) e.password = 'Password must be at least 8 characters.'
     if (!form.role) e.role = 'Role is required.'
     return e
   }
@@ -78,14 +82,17 @@ export default function UsersPage() {
     if (Object.keys(e2).length) { setFormErrors(e2); return }
     setSubmitting(true)
     try {
-      await api.post('/users', form)
-      toast.success(`User "${form.name}" created.`)
+      const { password, ...profile } = form
+      await api.post('/users', supabaseMode ? profile : form)
+      toast.success(supabaseMode
+        ? `"${form.name}" pre-registered. They must now sign up with ${form.email.trim().toLowerCase()} and confirm the email to activate the account.`
+        : `User "${form.name}" created.`)
       setShowModal(false)
       setForm(DEFAULT_FORM)
       setFormErrors({})
       await load()
     } catch (err) {
-      toast.error(err.response?.data?.error || err.response?.data?.message || 'Failed to create user.')
+      toast.error(err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to create user.')
     } finally {
       setSubmitting(false)
     }
@@ -234,6 +241,12 @@ export default function UsersPage() {
                 {formErrors.email && <p className="mt-1 text-[11px] text-rose-500">{formErrors.email}</p>}
               </div>
 
+              {supabaseMode ? (
+                <p className="text-[11px] text-slate-500 bg-blue-50 border border-blue-100 rounded-lg p-2.5 leading-relaxed">
+                  No password is set here. After you save, ask this person to use <strong>Create Account</strong> on the
+                  sign-in page with this exact email. Once they confirm their email, they get the role you choose below.
+                </p>
+              ) : (
               <div>
                 <label className="label">Password <span className="text-rose-500">*</span></label>
                 <div className="relative">
@@ -243,7 +256,7 @@ export default function UsersPage() {
                     value={form.password}
                     onChange={handleChange}
                     className="input-field pr-9"
-                    placeholder="Min. 6 characters"
+                    placeholder="Min. 8 characters"
                   />
                   <button
                     type="button"
@@ -255,6 +268,7 @@ export default function UsersPage() {
                 </div>
                 {formErrors.password && <p className="mt-1 text-[11px] text-rose-500">{formErrors.password}</p>}
               </div>
+              )}
 
               <div>
                 <label className="label">Role <span className="text-rose-500">*</span></label>
@@ -298,7 +312,7 @@ export default function UsersPage() {
                   Cancel
                 </button>
                 <button type="submit" disabled={submitting} className="btn-primary flex-1">
-                  {submitting ? 'Creating...' : 'Create User'}
+                  {submitting ? 'Saving...' : (supabaseMode ? 'Pre-register User' : 'Create User')}
                 </button>
               </div>
             </form>

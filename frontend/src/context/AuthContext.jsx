@@ -1,220 +1,194 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import api from '../api/axios'
 import { isSupabaseConfigured, getSupabase } from '../lib/supabase'
 
-export const DEMO_PERSONAS = []
-
-export const DEMO_CREDENTIALS = {}
-
 const AuthContext = createContext(null)
+const USER_CACHE_KEY = 'FAM_ACTIVE_USER'
+
+function toAppUser(profile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    email: profile.email,
+    role: profile.role,
+    department: profile.department || '',
+    staff_id: profile.staff_id || `EMP-${String(profile.id).padStart(4, '0')}`,
+    label: profile.name
+  }
+}
+
+// Load the staff profile (and role) linked to a Supabase Auth user.
+// The role always comes from the database, never from the browser.
+async function fetchProfile(supabase, authUserId) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, name, email, role, department, staff_id')
+    .eq('auth_id', authUserId)
+    .maybeSingle()
+  if (error) throw error
+  return data ? toAppUser(data) : null
+}
+
+function cacheUser(u) {
+  // Cache is for display/routing only. Authorization is enforced by the
+  // database (RLS) for Supabase, and by the JWT for the local backend.
+  if (u) localStorage.setItem(USER_CACHE_KEY, JSON.stringify(u))
+  else localStorage.removeItem(USER_CACHE_KEY)
+}
 
 export function AuthProvider({ children }) {
+  const supabaseMode = isSupabaseConfigured()
+
   const [user, setUser] = useState(() => {
+    // Local backend mode: restore the cached user only if a JWT exists.
+    if (supabaseMode || !localStorage.getItem('token')) return null
     try {
-      const stored = localStorage.getItem('FAM_ACTIVE_USER')
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (parsed?.email) return parsed
-      }
-    } catch {}
-    return null
+      const parsed = JSON.parse(localStorage.getItem(USER_CACHE_KEY) || 'null')
+      return parsed?.email ? parsed : null
+    } catch {
+      return null
+    }
   })
-
   const [token, setToken] = useState(() => localStorage.getItem('token'))
-  const [loading, setLoading] = useState(false)
+  // In Supabase mode we must wait for the stored session to be verified.
+  const [loading, setLoading] = useState(supabaseMode)
 
-  // Instant Persona Switcher
-  const switchUser = (roleOrEmail) => {
-    const target = DEMO_PERSONAS.find(p => p.email === roleOrEmail || p.role === roleOrEmail)
-    if (!target) return null
+  const applyUser = useCallback((u) => {
+    setUser(u)
+    cacheUser(u)
+  }, [])
 
-    setUser(target)
-    localStorage.setItem('FAM_ACTIVE_USER', JSON.stringify(target))
+  // Supabase session restore + live auth state
+  useEffect(() => {
+    if (!supabaseMode) return
+    const supabase = getSupabase()
+    if (!supabase) {
+      setLoading(false)
+      return
+    }
 
-    // Background sync token if local backend is active
-    api.post('/auth/login', { email: target.email, password: DEMO_CREDENTIALS[target.email] || 'Pass@123' })
-      .then(res => {
-        const payload = res.data?.data || res.data
-        if (payload?.token) {
-          localStorage.setItem('token', payload.token)
-          setToken(payload.token)
-        }
-      })
-      .catch(() => {})
+    let active = true
 
-    return target
-  }
+    const syncFromSession = async (session) => {
+      try {
+        const profile = session?.user ? await fetchProfile(supabase, session.user.id) : null
+        if (active) applyUser(profile)
+      } catch (err) {
+        console.error('[Auth] Failed to load profile', err)
+        if (active) applyUser(null)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
 
-  const login = async (email, password, optionalMetadata = {}) => {
+    supabase.auth.getSession().then(({ data }) => syncFromSession(data.session))
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        applyUser(null)
+        return
+      }
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        // Defer: calling Supabase inside this callback can deadlock the client.
+        setTimeout(() => syncFromSession(session), 0)
+      }
+    })
+
+    return () => {
+      active = false
+      sub?.subscription?.unsubscribe()
+    }
+  }, [supabaseMode, applyUser])
+
+  const login = async (email, password) => {
     const trimmedEmail = (email || '').trim().toLowerCase()
     if (!trimmedEmail) throw new Error('Corporate email is required.')
     if (!password) throw new Error('Password is required.')
 
-    let authenticatedUser = null
-
-    // 1. If Supabase is configured, authenticate and save credentials in Supabase
-    if (isSupabaseConfigured()) {
+    if (supabaseMode) {
       const supabase = getSupabase()
-      if (supabase) {
-        try {
-          const { data: existingUser, error: findErr } = await supabase
-            .from('users')
-            .select('*')
-            .ilike('email', trimmedEmail)
-            .maybeSingle()
-
-          if (existingUser) {
-            // If user exists: check or update password
-            if (!existingUser.password) {
-              // Initial or unpopulated password: save entered credentials to Supabase
-              try {
-                await supabase
-                  .from('users')
-                  .update({ password })
-                  .eq('id', existingUser.id)
-              } catch (_) {}
-              existingUser.password = password
-            } else if (existingUser.password !== password && password !== 'Admin@123' && password !== 'Pass@123') {
-              throw new Error('Incorrect password for this corporate account.')
-            }
-
-            authenticatedUser = {
-              id: existingUser.id,
-              name: existingUser.name,
-              email: existingUser.email,
-              role: existingUser.role,
-              department: existingUser.department || 'Corporate Bank',
-              staff_id: existingUser.staff_id || `EMP-${String(existingUser.id).padStart(4, '0')}`,
-              label: existingUser.name
-            }
-          } else {
-            // User does not exist yet in Supabase: auto-register and save credentials
-            const { data: allUsers } = await supabase
-              .from('users')
-              .select('id')
-              .order('id', { ascending: false })
-              .limit(1)
-
-            const maxId = allUsers && allUsers.length > 0 ? Number(allUsers[0].id) : 0
-            const nextId = maxId + 1
-
-            const namePart = trimmedEmail.split('@')[0]
-            const autoName = namePart
-              .split(/[._-]/)
-              .map(p => p.charAt(0).toUpperCase() + p.slice(1))
-              .join(' ')
-
-            const newUserPayload = {
-              id: nextId,
-              name: optionalMetadata.name?.trim() || autoName || 'Corporate Officer',
-              email: trimmedEmail,
-              password: password,
-              role: optionalMetadata.role || 'requesting_officer',
-              department: optionalMetadata.department?.trim() || 'Banking Operations',
-              staff_id: optionalMetadata.staff_id?.trim() || `EMP-${Math.floor(1000 + Math.random() * 9000)}`
-            }
-
-            const { data: createdUser, error: createErr } = await supabase
-              .from('users')
-              .insert(newUserPayload)
-              .select()
-              .single()
-
-            if (createErr) {
-              console.error('[Supabase Auto-Register Error]', createErr)
-              throw new Error(createErr.message || 'Failed to save new user in Supabase.')
-            }
-
-            authenticatedUser = {
-              id: createdUser.id,
-              name: createdUser.name,
-              email: createdUser.email,
-              role: createdUser.role,
-              department: createdUser.department,
-              staff_id: createdUser.staff_id,
-              label: createdUser.name
-            }
-          }
-        } catch (supabaseErr) {
-          // If it was a password mismatch error, rethrow immediately
-          if (supabaseErr.message?.includes('Incorrect password')) {
-            throw supabaseErr
-          }
-          console.warn('[Supabase Auth Warning, falling back to local]', supabaseErr)
+      const { data, error } = await supabase.auth.signInWithPassword({ email: trimmedEmail, password })
+      if (error) {
+        if (/confirm/i.test(error.message)) {
+          throw new Error('Please confirm your email address first (check your inbox), then sign in.')
         }
+        throw new Error('Invalid email or password.')
       }
-    }
-
-    // 2. Fallback to local Express backend / mock personas if Supabase was unavailable
-    if (!authenticatedUser) {
-      const target = DEMO_PERSONAS.find(p => p.email.toLowerCase() === trimmedEmail)
-      try {
-        const res = await api.post('/auth/login', { email: trimmedEmail, password })
-        const payload = res.data?.data || res.data
-        if (payload?.user) {
-          authenticatedUser = {
-            ...payload.user,
-            staff_id: payload.user.staff_id || target?.staff_id || 'EMP-0000',
-            label: target?.label || payload.user.name
-          }
-          if (payload.token) {
-            localStorage.setItem('token', payload.token)
-            setToken(payload.token)
-          }
-        }
-      } catch (err) {
-        const expectedPass = DEMO_CREDENTIALS[trimmedEmail]
-        if (target && (password === expectedPass || password === 'Admin@123' || password === 'Pass@123')) {
-          authenticatedUser = target
-        } else {
-          // Allow any new user in local mode as well
-          const namePart = trimmedEmail.split('@')[0]
-          authenticatedUser = {
-            id: Date.now(),
-            name: optionalMetadata.name || namePart.toUpperCase(),
-            email: trimmedEmail,
-            role: optionalMetadata.role || 'requesting_officer',
-            department: optionalMetadata.department || 'Banking Operations',
-            staff_id: optionalMetadata.staff_id || `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
-            label: optionalMetadata.name || namePart
-          }
-        }
+      const profile = await fetchProfile(supabase, data.user.id)
+      if (!profile) {
+        await supabase.auth.signOut()
+        throw new Error('Your account is not activated. Ask an administrator to register your email.')
       }
+      applyUser(profile)
+      return profile
     }
 
-    if (authenticatedUser) {
-      setUser(authenticatedUser)
-      localStorage.setItem('FAM_ACTIVE_USER', JSON.stringify(authenticatedUser))
-      return authenticatedUser
+    // Local Express backend (development only): bcrypt + JWT on the server.
+    let res
+    try {
+      res = await api.post('/auth/login', { email: trimmedEmail, password })
+    } catch (err) {
+      throw new Error(err.response?.data?.error || 'Sign-in failed. Is the local backend running?')
     }
-
-    throw new Error('User sign-in failed. Please verify your credentials.')
+    const payload = res.data?.data || res.data
+    if (!payload?.user || !payload?.token) throw new Error('Invalid email or password.')
+    localStorage.setItem('token', payload.token)
+    setToken(payload.token)
+    const authenticatedUser = toAppUser(payload.user)
+    applyUser(authenticatedUser)
+    return authenticatedUser
   }
 
-  // Explicit Registration method for ANY new staff member
-  const register = async (userData) => {
-    const { name, email, password, role, department, staff_id } = userData
-    if (!email || !password || !name) {
+  // Self-registration. Every new account starts as a Requesting Officer;
+  // only an administrator can grant other roles.
+  // Returns { user } when signed in, or { needsConfirmation: true }.
+  const register = async ({ name, email, password, department, staff_id }) => {
+    const trimmedEmail = (email || '').trim().toLowerCase()
+    if (!trimmedEmail || !password || !name) {
       throw new Error('Name, email, and password are required.')
     }
+    if (!supabaseMode) {
+      throw new Error('Self-registration requires Supabase. Ask an administrator to create your account.')
+    }
 
-    return login(email, password, {
-      name,
-      role: role || 'requesting_officer',
-      department: department || 'Banking Operations',
-      staff_id: staff_id || `EMP-${Math.floor(1000 + Math.random() * 9000)}`
+    const supabase = getSupabase()
+    const { data, error } = await supabase.auth.signUp({
+      email: trimmedEmail,
+      password,
+      options: {
+        data: { name: name.trim(), department: (department || '').trim(), staff_id: (staff_id || '').trim() },
+        emailRedirectTo: window.location.origin
+      }
     })
+    if (error) throw new Error(error.message || 'Registration failed.')
+
+    if (!data.session) {
+      return { needsConfirmation: true }
+    }
+    const profile = await fetchProfile(supabase, data.user.id)
+    if (!profile) {
+      await supabase.auth.signOut()
+      throw new Error('Account created, but it is not activated yet. Please contact an administrator.')
+    }
+    applyUser(profile)
+    return { user: profile }
   }
 
-  const logout = () => {
-    setUser(null)
+  const logout = async () => {
+    if (supabaseMode) {
+      try {
+        await getSupabase()?.auth.signOut()
+      } catch (err) {
+        console.warn('[Auth] signOut failed', err)
+      }
+    }
+    applyUser(null)
     setToken(null)
-    localStorage.removeItem('FAM_ACTIVE_USER')
     localStorage.removeItem('token')
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, switchUser, DEMO_PERSONAS }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   )
