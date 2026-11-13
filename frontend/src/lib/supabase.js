@@ -5,10 +5,30 @@
  */
 import { createClient } from '@supabase/supabase-js'
 
-const url = (import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '')
-const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
+const env = import.meta.env
+const first = (...values) => values.map((v) => (v || '').trim()).find(Boolean) || ''
 
-export const supabaseConfigured = Boolean(url.startsWith('http') && anonKey)
+const rawUrl = first(env.VITE_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_URL)
+const url = rawUrl.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '')
+const anonKey = first(
+  env.VITE_SUPABASE_ANON_KEY,
+  env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+)
+
+// For the "not configured" screen: what this build actually received.
+export const configCheck = {
+  urlFound: Boolean(url),
+  urlValid: /^https?:\/\//.test(url),
+  keyFound: Boolean(anonKey),
+  // The service-role key must never be in a browser build.
+  keyIsServiceRole: (() => {
+    try { return JSON.parse(atob(anonKey.split('.')[1] || '')).role === 'service_role' } catch { return anonKey.startsWith('sb_secret_') }
+  })()
+}
+
+export const supabaseConfigured = configCheck.urlValid && configCheck.keyFound && !configCheck.keyIsServiceRole
 
 export function isSupabaseConfigured() {
   return supabaseConfigured

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { Boxes, Settings2, CircleAlert, RotateCw } from 'lucide-react'
 import { useAuth, errorText } from './context/AuthContext'
+import { configCheck } from './lib/supabase'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -39,14 +40,35 @@ function Loading() {
   )
 }
 
+function Check({ ok, children }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${ok ? 'bg-emerald-600' : 'bg-red-600'}`} aria-hidden="true">
+        {ok ? '✓' : '!'}
+      </span>
+      <span>{children}</span>
+    </li>
+  )
+}
+
 function NotConfigured() {
+  const c = configCheck
   return (
     <CenteredCard icon={Settings2} title="Supabase is not configured">
-      <p>This site was built without its database connection settings.</p>
+      <p>This site was built without its database connection settings. What this build received:</p>
+      <ul className="space-y-1.5 rounded-lg bg-slate-50 p-3">
+        <Check ok={c.urlValid}>
+          Project URL {c.urlValid ? 'found' : c.urlFound ? 'found, but it must start with https://' : 'missing'}
+        </Check>
+        <Check ok={c.keyFound && !c.keyIsServiceRole}>
+          Anon / publishable key {c.keyIsServiceRole ? 'is the SECRET service-role key. Never use it here; use the anon key' : c.keyFound ? 'found' : 'missing'}
+        </Check>
+      </ul>
+      <p className="font-medium text-slate-800">To fix it:</p>
       <ol className="list-decimal space-y-1 pl-5">
-        <li>In Vercel, open the project, then <strong>Settings → Environment Variables</strong>.</li>
-        <li>Add <code className="rounded bg-slate-100 px-1">VITE_SUPABASE_URL</code> and <code className="rounded bg-slate-100 px-1">VITE_SUPABASE_ANON_KEY</code> (Supabase → Project Settings → API; use the anon/publishable key).</li>
-        <li>Redeploy. The values are built into the page, so a redeploy is required.</li>
+        <li>In Supabase, open <strong>Project Settings → API</strong> (or <strong>Data API</strong>). Copy the <strong>Project URL</strong> and the <strong>anon public</strong> key.</li>
+        <li>In Vercel, open the project, then <strong>Settings → Environment Variables</strong>. Add <code className="rounded bg-slate-100 px-1">VITE_SUPABASE_URL</code> and <code className="rounded bg-slate-100 px-1">VITE_SUPABASE_ANON_KEY</code>, ticking <strong>Production</strong> and <strong>Preview</strong>.</li>
+        <li>Go to <strong>Deployments</strong>, open the latest one, and choose <strong>Redeploy</strong>. Adding the variables alone does nothing until the site is rebuilt.</li>
       </ol>
     </CenteredCard>
   )
