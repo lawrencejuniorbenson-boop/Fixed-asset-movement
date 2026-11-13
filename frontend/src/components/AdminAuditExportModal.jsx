@@ -127,8 +127,8 @@ export default function AdminAuditExportModal({ isOpen, onClose, requests = [], 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-blue-100 max-w-lg w-full overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs  animate-in fade-in duration-150">
+      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden">
         {/* Header */}
         <div className="p-6 bg-gradient-to-r from-blue-900 to-indigo-900 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -297,7 +297,7 @@ export default function AdminAuditExportModal({ isOpen, onClose, requests = [], 
             </div>
 
             {/* Live Matches Counter Box */}
-            <div className="p-3.5 bg-blue-50/70 rounded-xl border border-blue-200/80 flex items-center justify-between">
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
                 <div>

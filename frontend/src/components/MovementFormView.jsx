@@ -29,9 +29,9 @@ export default function MovementFormView({ request }) {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden print:border-none print:shadow-none print:rounded-none">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print:border-none print:shadow-none print:rounded-none">
       {/* Utility Bar */}
-      <div className="bg-blue-50/70 border-b border-blue-100 px-6 py-3 flex items-center justify-between print:hidden">
+      <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex items-center justify-between print:hidden">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-blue-600" />
           <span className="text-xs font-semibold text-blue-950 tracking-wide uppercase">
@@ -64,7 +64,7 @@ export default function MovementFormView({ request }) {
       </div>
 
       {/* The Printable Official Document Sheet */}
-      <div className="p-8 sm:p-12 max-w-3xl mx-auto bg-white text-slate-900 font-sans print:p-0">
+      <div className="p-8 sm:p-12 max-w-3xl mx-auto bg-white text-slate-900  print:p-0">
         {/* Document Header */}
         <div className="text-center pb-6 border-b-2 border-slate-900">
           <h1 className="text-lg font-bold tracking-widest uppercase text-slate-900">
@@ -186,7 +186,7 @@ export default function MovementFormView({ request }) {
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
                   <span>Authorized by Asset &amp; Archives Department Pool</span>
-                  <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 uppercase font-sans">
+                  <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-slate-200 uppercase ">
                     AMA Pool
                   </span>
                 </p>
@@ -216,7 +216,7 @@ export default function MovementFormView({ request }) {
             </div>
 
             {/* Approval Status Stamp */}
-            <div className="flex flex-col items-center justify-center p-3 rounded-xl border border-blue-200 bg-blue-50/50 min-w-[180px]">
+            <div className="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 bg-blue-50/50 min-w-[180px]">
               <span className="text-[10px] uppercase font-semibold text-blue-700 tracking-wider">
                 Status
               </span>
@@ -234,14 +234,14 @@ export default function MovementFormView({ request }) {
 
         {/* Fulfillment Annex (Transport / IT) */}
         {request.transport_task && (
-          <div className="mt-8 pt-4 border-t border-dashed border-blue-200 text-xs text-slate-700 space-y-1.5 bg-blue-50/30 p-4 rounded-xl">
+          <div className="mt-8 pt-4 border-t border-dashed border-slate-200 text-xs text-slate-700 space-y-1.5 bg-blue-50/30 p-4 rounded-xl">
             <div className="flex items-center justify-between">
               <p className="font-semibold uppercase tracking-wider text-[11px] text-blue-950">
                 {request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it'
                   ? 'IT Infrastructure & Logistics Execution'
                   : 'Transport & Logistics Execution'}
               </p>
-              <span className="text-[10px] font-semibold text-blue-700 bg-blue-100/60 px-1.5 py-0.5 rounded border border-blue-200">
+              <span className="text-[10px] font-semibold text-blue-700 bg-blue-100/60 px-1.5 py-0.5 rounded border border-slate-200">
                 {request.fulfillment_type === 'it' || request.transport_task?.fulfillment_type === 'it'
                   ? 'IT Systems Pool'
                   : 'Transport Pool'}

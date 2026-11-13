@@ -658,24 +658,46 @@ export const supabaseDataService = {
     return data
   },
 
+  async updateUser(id, changes) {
+    const supabase = getSupabase()
+    if (!supabase) throw new Error('Supabase is not configured')
+    const payload = {}
+    for (const k of ['name', 'role', 'department', 'staff_id']) {
+      if (changes[k] !== undefined) payload[k] = typeof changes[k] === 'string' ? changes[k].trim() || null : changes[k]
+    }
+    const { data, error } = await supabase
+      .from('users')
+      .update(payload)
+      .eq('id', Number(id))
+      .select('id, name, email, role, department, staff_id')
+    if (error) throw error
+    if (!data || data.length === 0) throw new Error('You are not allowed to change this user.')
+    nameCache.at = 0
+    return data[0]
+  },
+
   async deleteUser(id) {
     const supabase = getSupabase()
     if (!supabase) throw new Error('Supabase is not configured')
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('users')
       .delete()
       .eq('id', Number(id))
+      .select('id')
     if (error) throw error
+    if (!data || data.length === 0) throw new Error('You are not allowed to remove this user.')
+    nameCache.at = 0
     return true
   },
 
   async getFulfillmentOfficers(isIt = false) {
     const users = await this.getUsers()
     if (!users || users.length === 0) return []
-    if (isIt) {
-      return users.filter(u => u.role === 'it_head' || u.role === 'it_officer')
-    }
-    return users.filter(u => u.role === 'transport_head' || u.role === 'transport_officer')
+    // Administrators can also be assigned (e.g. a single-admin demo).
+    const pool = isIt ? ['it_head', 'it_officer'] : ['transport_head', 'transport_officer']
+    return users
+      .filter(u => pool.includes(u.role) || u.role === 'admin')
+      .sort((a, b) => (a.role === 'admin') - (b.role === 'admin'))
   },
 
   async assignTransport(id, assignData, user) {
@@ -729,7 +751,6 @@ export const supabaseDataService = {
     const currentTask = await this.getTransportTaskById(id)
     if (currentTask?.movement_request_id) {
       const isIt = currentTask.fulfillment_type === 'it' || currentTask.request?.fulfillment_type === 'it'
-      const poolName = isIt ? 'IT Infrastructure & Systems Pool' : 'Transport & Logistics Pool'
       const numericUserId = user?.id && !isNaN(Number(user.id)) ? Number(user.id) : null
       try {
         await supabase.from('audit_log').insert({
@@ -737,7 +758,7 @@ export const supabaseDataService = {
           transport_task_id: Number(id),
           action: isIt ? 'IT_OFFICER_ASSIGNED' : 'OFFICER_ASSIGNED',
           performed_by: numericUserId,
-          performed_by_name: `${user?.name || (isIt ? 'IT Infrastructure Head' : 'Transport Pool Head')} (${poolName})`,
+          performed_by_name: user?.name || null,
           remarks: isIt
             ? `Assigned: ${officerName}. Carrier/Equipment: ${assignData.vehicle_details || 'IT Transport Van'}${driverName ? ` • Driver/Courier: ${driverName}` : ''}. Date: ${assignData.scheduled_date}`
             : `Assigned: ${officerName}. Vehicle: ${assignData.vehicle_details}${driverName ? ` • Driver: ${driverName}` : ''}. Date: ${assignData.scheduled_date}`
@@ -758,7 +779,6 @@ export const supabaseDataService = {
     if (!task) throw new Error('Task not found')
 
     const isItTask = task.fulfillment_type === 'it' || task.request?.fulfillment_type === 'it'
-    const poolName = isItTask ? 'IT Infrastructure & Systems Pool' : 'Transport & Logistics Pool'
     const numericUserId = user?.id && !isNaN(Number(user.id)) ? Number(user.id) : null
 
     // 1. Update transport_tasks status to in_progress
@@ -790,10 +810,8 @@ export const supabaseDataService = {
         transport_task_id: Number(id),
         action: isItTask ? 'IT_EQUIPMENT_PICKUP_STARTED' : 'TRANSPORT_STARTED_BY_POOL',
         performed_by: numericUserId,
-        performed_by_name: `${user?.name || 'Officer'} (${poolName})`,
-        remarks: isItTask
-          ? `IT hardware de-racking and transit started by ${user?.name || 'IT Systems Officer'}`
-          : `Physical relocation started by ${user?.name || 'Transport Pool Officer'}`
+        performed_by_name: user?.name || null,
+        remarks: null
       })
     } catch (err) {
       console.warn('[startTransport audit_log warning]', err)
@@ -810,7 +828,6 @@ export const supabaseDataService = {
     if (!task) throw new Error('Task not found')
 
     const isItTask = task.fulfillment_type === 'it' || task.request?.fulfillment_type === 'it'
-    const poolName = isItTask ? 'IT Infrastructure & Systems Pool' : 'Transport & Logistics Pool'
     const numericUserId = user?.id && !isNaN(Number(user.id)) ? Number(user.id) : null
 
     const now = new Date().toISOString()
@@ -845,10 +862,8 @@ export const supabaseDataService = {
         transport_task_id: Number(id),
         action: isItTask ? 'IT_RELOCATION_COMPLETED' : 'RELOCATION_COMPLETED_BY_TRANSPORT_POOL',
         performed_by: numericUserId,
-        performed_by_name: `${user?.name || 'Officer'} (${poolName})`,
-        remarks: isItTask
-          ? `IT relocation completed and network verified by ${user?.name || 'IT Systems Officer'}. AMA Pool notified.`
-          : `Relocation completed and verified by ${user?.name || 'Transport Pool Officer'}. AMA Pool notified.`
+        performed_by_name: user?.name || null,
+        remarks: completionNotes?.trim() || null
       })
     } catch (auditErr) {
       console.warn('[completeTransport audit log warning]', auditErr)

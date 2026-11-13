@@ -48,9 +48,9 @@ export default function RequestAuditHistory({ request, auditLog = [] }) {
   })
 
   return (
-    <div className="space-y-6 font-sans">
+    <div className="space-y-6 ">
       {/* 1. TOP SLA & CYCLE TIME SUMMARY BANNER */}
-      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white rounded-2xl p-6 shadow-sm border border-blue-700/40 relative overflow-hidden">
+      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white rounded-xl p-6 shadow-sm border border-blue-700/40 relative overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div>
             <div className="flex items-center gap-2">
@@ -122,7 +122,7 @@ export default function RequestAuditHistory({ request, auditLog = [] }) {
       </div>
 
       {/* 2. HOW LONG IT PENDED AT EACH STAGE (STAGE BREAKDOWN GRID) */}
-      <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-6 space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-50 pb-3">
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-blue-950 flex items-center gap-2">
@@ -194,7 +194,7 @@ export default function RequestAuditHistory({ request, auditLog = [] }) {
                     )}
 
                     {isPending && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200 animate-pulse">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-slate-200 animate-pulse">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
                         Pending Action
                       </span>
@@ -255,7 +255,7 @@ export default function RequestAuditHistory({ request, auditLog = [] }) {
                       )}
 
                       {isPending && (
-                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-100/70 px-1.5 py-0.5 rounded border border-blue-200">
+                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-100/70 px-1.5 py-0.5 rounded border border-slate-200">
                           Active Now
                         </span>
                       )}
@@ -286,7 +286,7 @@ export default function RequestAuditHistory({ request, auditLog = [] }) {
       </div>
 
       {/* 3. COMPLETE CHRONOLOGICAL AUDIT EVENT LOG */}
-      <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-6 space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-blue-50 pb-3">
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-blue-950 flex items-center gap-2">
@@ -305,7 +305,7 @@ export default function RequestAuditHistory({ request, auditLog = [] }) {
           <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-md border flex items-center gap-1.5 ${
             request?.fulfillment_type === 'it' || request?.transport_task?.fulfillment_type === 'it'
               ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
-              : 'bg-blue-50 text-blue-800 border-blue-200'
+              : 'bg-blue-50 text-blue-800 border-slate-200'
           }`}>
             {request?.fulfillment_type === 'it' || request?.transport_task?.fulfillment_type === 'it' ? (
               <>
@@ -351,11 +351,11 @@ export default function RequestAuditHistory({ request, auditLog = [] }) {
               return (
                 <div
                   key={log.id || i}
-                  className="p-4 rounded-xl border border-blue-100/80 bg-white hover:bg-blue-50/20 transition flex flex-col sm:flex-row sm:items-start justify-between gap-4"
+                  className="p-4 rounded-xl border border-slate-200 bg-white hover:bg-blue-50/20 transition flex flex-col sm:flex-row sm:items-start justify-between gap-4"
                 >
                   <div className="flex items-start gap-3">
                     {/* Event Step Number */}
-                    <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-900 font-mono font-bold text-xs flex items-center justify-center shrink-0 border border-blue-200">
+                    <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-900 font-mono font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
                       {i + 1}
                     </div>
 
@@ -365,7 +365,7 @@ export default function RequestAuditHistory({ request, auditLog = [] }) {
                           {actionLabel}
                         </span>
 
-                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-slate-200">
                           {log.performed_by_name || 'System / Automated'}
                         </span>
 
@@ -377,7 +377,7 @@ export default function RequestAuditHistory({ request, auditLog = [] }) {
                         )}
 
                         {isTransportEvent && (
-                          <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded flex items-center gap-1">
+                          <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-slate-200 px-2 py-0.5 rounded flex items-center gap-1">
                             <Truck className="w-2.5 h-2.5 text-blue-600" />
                             Transport Fleet
                           </span>

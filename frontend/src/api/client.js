@@ -158,6 +158,12 @@ async function handleSupabaseRoute(method, url, data, config = {}) {
     return { data: { success: true, data: results } }
   }
 
+  const updateUserMatch = cleanUrl.match(/^users\/(\d+)$/)
+  if (updateUserMatch && method === 'post') {
+    const updated = await supabaseDataService.updateUser(updateUserMatch[1], data || {})
+    return { data: { success: true, data: updated } }
+  }
+
   const deleteUserMatch = cleanUrl.match(/^users\/(\d+)$/)
   if (deleteUserMatch && method === 'delete') {
     await supabaseDataService.deleteUser(deleteUserMatch[1])

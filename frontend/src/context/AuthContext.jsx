@@ -141,7 +141,10 @@ export function AuthProvider({ children }) {
       setMode(m)
     } catch (err) {
       console.error('[Auth] start-up failed', err)
-      setSetupError(errorText(err))
+      const msg = errorText(err)
+      setSetupError(/failed to fetch|networkerror|load failed/i.test(msg)
+        ? 'Could not reach the database server. Check your internet connection, then try again.'
+        : msg)
       setMode('error')
     }
   }, [supabase, startOpenMode, startLoginMode])
