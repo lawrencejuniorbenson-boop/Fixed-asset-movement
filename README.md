@@ -90,7 +90,7 @@ The platform integrates directly with the organization's corporate **Active Dire
 
 ## 👥 User Authentication & Access
 
-Any authorized staff member can sign in or register directly via the portal. User accounts and credentials are saved securely in Supabase / institutional database with role-based access for:
+Sign-in uses **Supabase Auth** (passwords are hashed and managed by Supabase, never stored in app tables). Each signed-in account is linked to a staff profile in `public.users`, which holds the role:
 - **Requesting Officer** (Originator)
 - **Requesting Department Head** (Department Review & Approval)
 - **Asset & Archives Department Pool** (Asset Verification, Release & Register Closure)
@@ -99,9 +99,42 @@ Any authorized staff member can sign in or register directly via the portal. Use
 - **Internal Audit & Inspection** (Compliance & Audit Exports)
 - **System Administrator** (Enterprise Oversight & System Configuration)
 
+### How accounts work
+- **Self sign-up** always creates a **Requesting Officer**. Nobody can choose their own role.
+- **Other roles** are assigned by an administrator: on *Users → Add User* the admin pre-registers the email and role. The staff member then uses *Create Account* with that same email; once they confirm the email, they receive the pre-assigned role.
+- **First administrator:** sign up, confirm your email, then run in the Supabase SQL Editor:
+  ```sql
+  UPDATE public.users SET role = 'admin' WHERE email = 'you@yourbank.com';
+  ```
+
+### Security model (enforced in the database, not the browser)
+- Row Level Security on every table; signed-out visitors can read nothing.
+- Each role only sees the requests relevant to it (see `supabase_schema.sql`, section 6).
+- Approval stages can only be performed by the right role, in order, and the approver's name/ID is stamped by the database.
+- Nobody can approve or close their own request.
+- The audit log is append-only and attributed to the real signed-in user.
+
+## 🔐 Supabase Setup (required for deployment)
+
+1. Create a Supabase project.
+2. In **SQL Editor**, run the whole of `supabase_schema.sql`. It is safe to re-run, and it upgrades an older install in place.
+3. In **Authentication → Providers → Email**, keep **Confirm email ON**. Existing staff profiles are linked to a sign-up by email address only after confirmation.
+4. In **Authentication → URL Configuration**, set the **Site URL** to your deployed URL (e.g. your Vercel domain).
+5. In Vercel (or `frontend/.env.local` for local dev), set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the publishable/anon key, **never** the service-role key).
+
+**Upgrading from the previous version:** the old `users.password` column is deleted. Existing staff keep their profile and role, but each must use *Create Account* once with their existing email to set a new password.
+
+### Security tests
+`supabase/tests/rls_test.sh` checks the database rules (60 checks: privilege escalation, cross-user access, workflow bypass, etc.) against a plain local PostgreSQL:
+```bash
+PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres ./supabase/tests/rls_test.sh
+```
+
 ---
 
 ## 🚀 How to Run the Platform
+
+> **Production runs on Supabase only.** The Vercel deployment serves the frontend, which talks directly to Supabase. The Express backend in `backend/` is a local development server and is not deployed. If you run it, set `JWT_SECRET` (32+ characters); it refuses to start in production without one.
 
 ### Option 1: Quick Launch
 Double-click `start.bat` in this folder. It will launch both the backend and frontend in separate command windows.
