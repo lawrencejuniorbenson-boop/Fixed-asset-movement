@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Users, Plus, X, Eye, EyeOff, UserCheck, ShieldAlert, Trash2 } from 'lucide-react'
-import api from '../api/axios'
+import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useToast } from '../context/ToastContext'
@@ -9,8 +9,8 @@ import LoadingSkeleton from '../components/LoadingSkeleton'
 const ROLES = [
   { value: 'requesting_officer', label: 'Requesting Officer' },
   { value: 'department_head', label: 'Requesting Department Head' },
-  { value: 'ama_officer', label: 'AMA Officer (Asset Management \& Archives Pool)' },
-  { value: 'ama_head', label: 'AMA Head (Asset Management \& Archives Pool)' },
+  { value: 'ama_officer', label: 'AMA Officer (Asset Management & Archives Pool)' },
+  { value: 'ama_head', label: 'AMA Head (Asset Management & Archives Pool)' },
   { value: 'transport_head', label: 'Transport Head (Transport & Logistics Pool)' },
   { value: 'transport_officer', label: 'Transport Officer (Transport & Logistics Pool)' },
   { value: 'it_head', label: 'IT Head (IT Infrastructure Pool)' },

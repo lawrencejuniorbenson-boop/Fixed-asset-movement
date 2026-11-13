@@ -3,9 +3,9 @@ import { calculateStageDurations } from '../utils/slaAnalytics'
 
 const STAGES = [
   { key: 'head', title: '1. Requesting Department Head', desc: 'Departmental review & authorization by unit head' },
-  { key: 'ama', title: '2. Asset Management \& Archives Department', desc: 'Asset register & tag verification, then movement authorization (Department Pool)' },
+  { key: 'ama', title: '2. Asset Management & Archives Department', desc: 'Asset register & tag verification, then movement authorization (Department Pool)' },
   { key: 'transport', title: '3. Transport & Logistics Department', desc: 'Logistics allocation & physical relocation (Department Pool)' },
-  { key: 'closure', title: '4. Asset Management \& Archives Department', desc: 'Records updated in register & file closed (Department Pool)' }
+  { key: 'closure', title: '4. Asset Management & Archives Department', desc: 'Records updated in register & file closed (Department Pool)' }
 ]
 
 function getStageState(request, key) {
@@ -46,7 +46,7 @@ export default function ApprovalTimeline({ request }) {
 
   const stages = [
     { key: 'head', title: '1. Requesting Department Head', desc: 'Departmental review & authorization by unit head' },
-    { key: 'ama', title: '2. Asset Management \& Archives Department', desc: 'Asset register & tag verification, then movement authorization (Department Pool)' },
+    { key: 'ama', title: '2. Asset Management & Archives Department', desc: 'Asset register & tag verification, then movement authorization (Department Pool)' },
     {
       key: 'transport',
       title: isIt ? '3. IT Infrastructure & Systems Department' : '3. Transport & Logistics Department',
@@ -54,7 +54,7 @@ export default function ApprovalTimeline({ request }) {
         ? 'IT hardware allocation, de-racking & physical transit (Department Pool)'
         : 'Logistics allocation & physical relocation (Department Pool)'
     },
-    { key: 'closure', title: '4. Asset Management \& Archives Department', desc: 'Records updated in register & file closed (Department Pool)' }
+    { key: 'closure', title: '4. Asset Management & Archives Department', desc: 'Records updated in register & file closed (Department Pool)' }
   ]
 
   return (
@@ -82,7 +82,7 @@ export default function ApprovalTimeline({ request }) {
           timestamp = request.head_approved_at
           notes = request.head_remarks
         } else if (stage.key === 'ama') {
-          approver = request.ama_officer_name || request.ama_head_name || 'Asset Management \& Archives Department'
+          approver = request.ama_officer_name || request.ama_head_name || 'Asset Management & Archives Department'
           timestamp = request.ama_head_approved_at || request.ama_officer_approved_at
           notes = request.ama_head_remarks || request.ama_officer_remarks
         } else if (stage.key === 'transport') {
@@ -91,7 +91,7 @@ export default function ApprovalTimeline({ request }) {
           timestamp = task?.completed_at || task?.scheduled_date
           notes = task?.completion_notes || task?.vehicle_details
         } else if (stage.key === 'closure') {
-          approver = 'Asset Management \& Archives Department'
+          approver = 'Asset Management & Archives Department'
           timestamp = request.ama_closed_at
           notes = request.ama_closing_remarks
         }

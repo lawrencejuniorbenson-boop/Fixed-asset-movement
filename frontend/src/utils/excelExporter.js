@@ -190,7 +190,7 @@ export function exportPeriodicAuditToExcel(requests = [], auditLogs = [], filter
       'Lifecycle Event / Action': (log.action || '').replace(/_/g, ' '),
       'Officer Name & Designation': log.performed_by_name || 'System / Automated',
       'Assigned Department / Pool': (log.performed_by_name?.includes('AMA') || log.action?.includes('AMA') || log.action?.includes('REGISTER'))
-        ? 'Asset Management \& Archives Department Pool'
+        ? 'Asset Management & Archives Department Pool'
         : ((log.performed_by_name?.includes('IT') || log.action?.includes('IT'))
           ? 'IT Infrastructure & Systems Pool'
           : ((log.performed_by_name?.includes('Transport') || log.action?.includes('TRANSPORT')) ? 'Transport & Logistics Pool' : 'Unit Review / System')),
@@ -243,7 +243,7 @@ export function exportPeriodicAuditToExcel(requests = [], auditLogs = [], filter
     { 'Parameter': 'Generation Timestamp', 'Detail': exportDateStr },
     { 'Parameter': 'Filtered Start Date', 'Detail': startDate || 'All History (No start limit)' },
     { 'Parameter': 'Filtered End Date', 'Detail': endDate || 'All History (No end limit)' },
-    { 'Parameter': 'Department Pool Filter', 'Detail': pool === 'ama' ? 'Asset Management \& Archives Pool Only' : (pool === 'transport' ? 'Transport & Logistics Pool Only' : 'All Department Pools') },
+    { 'Parameter': 'Department Pool Filter', 'Detail': pool === 'ama' ? 'Asset Management & Archives Pool Only' : (pool === 'transport' ? 'Transport & Logistics Pool Only' : 'All Department Pools') },
     { 'Parameter': 'Status Filter', 'Detail': status || 'All Request Statuses' },
     { 'Parameter': 'Total Matching Audit Events', 'Detail': filteredLogs.length },
     { 'Parameter': 'Total Movement Requests Audited', 'Detail': requests.length },

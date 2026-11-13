@@ -4,7 +4,7 @@ import {
   ArrowLeft, Truck, CheckCircle2, Play, Bell, Calendar, MapPin,
   Users, UserCheck, Shield, ExternalLink, Info, User, Server
 } from 'lucide-react'
-import api from '../api/axios'
+import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import StatusBadge from '../components/StatusBadge'
@@ -580,8 +580,8 @@ export default function TransportDetailPage() {
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 {isItTask
-                  ? `Confirm when servers and IT hardware have been safely received, mounted, and verified at ${task.request?.new_location}. The Asset Management \& Archives Department will be formally notified.`
-                  : `Confirm when the assets have reached ${task.request?.new_location}. The system will notify the Asset Management \& Archives Department Pool to update the register.`
+                  ? `Confirm when servers and IT hardware have been safely received, mounted, and verified at ${task.request?.new_location}. The Asset Management & Archives Department will be formally notified.`
+                  : `Confirm when the assets have reached ${task.request?.new_location}. The system will notify the Asset Management & Archives Department Pool to update the register.`
                 }
               </p>
             </div>

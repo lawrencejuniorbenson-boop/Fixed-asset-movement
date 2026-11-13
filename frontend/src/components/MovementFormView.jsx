@@ -1,4 +1,5 @@
 import React from 'react'
+import { formatDate } from '../lib/format'
 import { Download, Lock, CheckCircle2, FileText } from 'lucide-react'
 
 export default function MovementFormView({ request }) {
@@ -70,7 +71,7 @@ export default function MovementFormView({ request }) {
             FIXED ASSET MOVEMENT FORM
           </h1>
           <p className="text-[11px] font-medium tracking-wider text-slate-500 mt-1 uppercase">
-            Asset Management \&amp; Archives Department
+            Asset Management &amp; Archives Department
           </p>
         </div>
 
@@ -118,7 +119,7 @@ export default function MovementFormView({ request }) {
                 SIGNATURE:
               </span>
               <span className="flex-1 border-b border-dotted border-slate-400 pb-0.5 italic text-slate-800">
-                {request.signature_requester || 'Signed Digitally'}
+                {request.signature_requester || '—'}
               </span>
             </div>
           </div>
@@ -129,7 +130,7 @@ export default function MovementFormView({ request }) {
                 AUTHORIZED BY:
               </span>
               <span className="flex-1 border-b border-dotted border-slate-400 pb-0.5 font-medium text-slate-900">
-                {request.head_approver_name || request.authorized_by || '—'}
+                {request.head_approver_name || (request.authorized_by ? `${request.authorized_by} (approval pending)` : '—')}
               </span>
             </div>
 
@@ -138,7 +139,7 @@ export default function MovementFormView({ request }) {
                 DATE:
               </span>
               <span className="flex-1 border-b border-dotted border-slate-400 pb-0.5 font-medium text-slate-900">
-                {request.movement_date || new Date().toISOString().split('T')[0]}
+                {formatDate(request.movement_date)}
               </span>
             </div>
           </div>
@@ -178,7 +179,7 @@ export default function MovementFormView({ request }) {
           </table>
         </div>
 
-        {/* Authorization Section: Approved by Asset Management \& Archives Department Pool */}
+        {/* Authorization Section: Approved by Asset Management & Archives Department Pool */}
         <div className="mt-8 pt-4 border-t-2 border-slate-800">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
             <div className="space-y-3">
@@ -198,7 +199,7 @@ export default function MovementFormView({ request }) {
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="text-xs font-medium text-slate-700 uppercase">Signature:</span>
                   <span className="min-w-[220px] border-b border-dotted border-slate-400 italic text-slate-800">
-                    {request.ama_head_signature || (request.ama_head_name ? 'Authorized Electronically' : '.......................................')}
+                    {request.ama_head_signature || request.ama_head_name || '.......................................'}
                   </span>
                 </div>
               </div>
@@ -208,7 +209,7 @@ export default function MovementFormView({ request }) {
                   <span className="text-blue-700 font-medium">Verified by (Asset &amp; Archives Pool): </span>
                   <span className="font-semibold text-slate-900">{request.ama_officer_name}</span>
                   {request.ama_officer_approved_at && (
-                    <span className="text-slate-400 ml-1">on {new Date(request.ama_officer_approved_at).toLocaleDateString()}</span>
+                    <span className="text-slate-400 ml-1">on {formatDate(request.ama_officer_approved_at)}</span>
                   )}
                 </div>
               )}
@@ -224,7 +225,7 @@ export default function MovementFormView({ request }) {
               </span>
               {request.ama_head_approved_at && (
                 <span className="text-[10px] text-blue-700 mt-0.5">
-                  {new Date(request.ama_head_approved_at).toLocaleDateString()}
+                  {formatDate(request.ama_head_approved_at)}
                 </span>
               )}
             </div>
@@ -287,7 +288,7 @@ export default function MovementFormView({ request }) {
             )}
             {request.ama_closed_at && (
               <p className="text-blue-900 text-[11px]">
-                &bull; Asset register records updated and closed by Asset &amp; Archives Department on {new Date(request.ama_closed_at).toLocaleDateString()}.
+                &bull; Asset register records updated and closed by Asset &amp; Archives Department on {formatDate(request.ama_closed_at)}.
               </p>
             )}
           </div>

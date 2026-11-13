@@ -6,7 +6,7 @@ import {
   Truck, Server, User, Activity, AlertTriangle, ChevronRight, Layers,
   ExternalLink, ArrowUpRight, ShieldAlert
 } from 'lucide-react'
-import api from '../api/axios'
+import api from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import AdminAuditExportModal from '../components/AdminAuditExportModal'
@@ -113,7 +113,7 @@ export default function AuditLogPage() {
             id: `ama-${req.id}`,
             action: 'ASSET_VERIFIED_BY_AMA_POOL',
             created_at: req.ama_officer_approved_at || req.created_at,
-            performed_by_name: `${req.ama_officer_name || 'Asset Management \& Archives Officer'} (Asset Management \& Archives Pool)`,
+            performed_by_name: `${req.ama_officer_name || 'Asset Management & Archives Officer'} (Asset Management & Archives Pool)`,
             remarks: `Asset items verified and cross-checked.`
           })
         }
@@ -148,7 +148,7 @@ export default function AuditLogPage() {
         const isItReq = req.fulfillment_type === 'it'
 
         if (pName.includes('ama') || pName.includes('asset') || pName.includes('archive') || actionStr.includes('ama') || actionStr.includes('register')) {
-          pool = 'Asset Management \& Archives Pool'
+          pool = 'Asset Management & Archives Pool'
         } else if (isItReq || pName.includes('it ') || pName.includes('infrastructure') || actionStr.includes('it_')) {
           pool = 'IT Infrastructure & Systems Pool'
         } else if (pName.includes('transport') || pName.includes('logistics') || pName.includes('fleet') || actionStr.includes('transport') || actionStr.includes('officer_assigned') || actionStr.includes('dispatched')) {
@@ -205,7 +205,7 @@ export default function AuditLogPage() {
 
       // 2. Pool Filter
       if (poolFilter !== 'all') {
-        if (poolFilter === 'ama' && ev.pool !== 'Asset Management \& Archives Pool') return false
+        if (poolFilter === 'ama' && ev.pool !== 'Asset Management & Archives Pool') return false
         if (poolFilter === 'it' && ev.pool !== 'IT Infrastructure & Systems Pool') return false
         if (poolFilter === 'transport' && ev.pool !== 'Transport & Logistics Pool') return false
         if (poolFilter === 'dept' && ev.pool !== 'Requesting Unit' && ev.pool !== 'Requesting Unit Head') return false

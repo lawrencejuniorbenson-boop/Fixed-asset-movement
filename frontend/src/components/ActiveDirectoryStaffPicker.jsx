@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Search, UserCheck, Building2, Check, X, Shield, ExternalLink } from 'lucide-react'
-import api from '../api/axios'
+import api from '../api/client'
 
 /**
  * Active Directory Staff Picker Component

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Search, Truck, ArrowRight, ClipboardList, Server } from 'lucide-react'
-import api from '../api/axios'
+import api from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import { useAuth } from '../context/AuthContext'

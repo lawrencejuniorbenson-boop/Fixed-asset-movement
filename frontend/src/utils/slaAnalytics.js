@@ -15,8 +15,8 @@ export const STAGE_SLAS = {
   ama_verification_and_auth: {
     name: 'Stage 2: Asset Register Verification & Movement Authorization',
     shortName: 'Asset Verification & Authorization',
-    role: 'Asset Management \& Archives Department',
-    pool: 'Asset Management \& Archives Department',
+    role: 'Asset Management & Archives Department',
+    pool: 'Asset Management & Archives Department',
     targetHours: 24
   },
   transport_allocation: {
@@ -36,8 +36,8 @@ export const STAGE_SLAS = {
   register_closure: {
     name: 'Stage 5: Asset Register Update & Record Archival',
     shortName: 'Register Closure',
-    role: 'Asset Management \& Archives Department',
-    pool: 'Asset Management \& Archives Department',
+    role: 'Asset Management & Archives Department',
+    pool: 'Asset Management & Archives Department',
     targetHours: 24
   }
 }
@@ -223,9 +223,9 @@ export function calculateStageDurations(request, auditLog = []) {
     {
       id: 'ama_verification_and_auth',
       title: 'Asset Register Verification & Movement Authorization',
-      shortTitle: 'Asset Management \& Archives Department',
-      actor: request.ama_head_name || request.ama_officer_name || 'Asset Management \& Archives Department',
-      role: 'Asset Management \& Archives Department Pool',
+      shortTitle: 'Asset Management & Archives Department',
+      actor: request.ama_head_name || request.ama_officer_name || 'Asset Management & Archives Department',
+      role: 'Asset Management & Archives Department Pool',
       state: stage2State,
       startTime: headApprovedAt,
       endTime: amaHeadApprovedAt,
@@ -265,9 +265,9 @@ export function calculateStageDurations(request, auditLog = []) {
     {
       id: 'register_closure',
       title: 'Fixed Asset Register Closure',
-      shortTitle: 'Asset Management \& Archives Department',
-      actor: 'Asset Management \& Archives Department',
-      role: 'Asset Management \& Archives Department Pool',
+      shortTitle: 'Asset Management & Archives Department',
+      actor: 'Asset Management & Archives Department',
+      role: 'Asset Management & Archives Department Pool',
       state: stage6State,
       startTime: transportCompletedAt,
       endTime: amaClosedAt,
