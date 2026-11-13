@@ -29,20 +29,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
-      <div className="w-full max-w-sm">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-navy-950 via-navy-900 to-blue-900 px-4 py-10">
+      <div className="pointer-events-none absolute -left-24 top-1/4 h-80 w-80 rounded-full bg-blue-500/20 blur-3xl" aria-hidden="true" />
+      <div className="relative w-full max-w-sm">
         <div className="mb-6 flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-white shadow-lg shadow-blue-500/30">
             <Boxes className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-slate-900">Asset Movement</p>
-            <p className="text-xs text-slate-500">Fixed asset register</p>
+            <p className="text-base font-semibold text-white">Asset Movement</p>
+            <p className="text-xs text-blue-200/80">Fixed asset register</p>
           </div>
         </div>
 
-        <div className="card">
-          <h1 className="text-lg font-semibold text-slate-900">Sign in</h1>
+        <div className="rounded-2xl bg-white p-6 shadow-2xl shadow-black/30 sm:p-7">
+          <h1 className="text-xl font-semibold text-navy-900">Sign in</h1>
           <p className="mt-1 text-sm text-slate-500">Administrator access.</p>
 
           <form onSubmit={submit} className="mt-5 space-y-4">
