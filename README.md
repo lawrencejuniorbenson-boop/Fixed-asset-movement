@@ -18,13 +18,11 @@ Requesting Officer (Fills Form A & Table of Assets)
 Unit / Department Head (Step 1: Departmental Review & Approval)
          │
          ▼
-AMA Officer (Step 2: Fixed Asset Register & Tag Verification)
-         │
-         ▼
-Head, Fixed Assets / AMA Head (Step 3: Final Authorization)
+AMA pool: any one AMA Officer or AMA Head
+(Step 2: verifies asset register & tags AND authorizes the movement, in one approval)
          │
          ▼  (Automatically generates and forwards Form B)
-Transport & Logistics Unit
+Transport & Logistics Unit (or IT pool for IT equipment)
 ```
 
 ### 🚚 Form 2 (Form B): Transport & Logistics Execution

@@ -88,9 +88,10 @@ expect_err "may not change" run_as dan@bank.com "update public.movement_requests
 echo "== Workflow: happy path"
 expect_ok run_as dan@bank.com "update public.movement_requests set status='head_approved', head_approved_by=1, head_approved_name='Fake', head_remarks='ok' where id=$RID;"
 expect_eq "3|Dan Head" $P -c "select head_approved_by, head_approved_name from public.movement_requests where id=$RID"
-expect_err "Only the Asset Management" run_as dan@bank.com "update public.movement_requests set status='ama_officer_approved' where id=$RID;"
-expect_ok run_as amy@bank.com "update public.movement_requests set status='ama_officer_approved', ama_officer_remarks='v' where id=$RID;"
-expect_ok run_as amy@bank.com "update public.movement_requests set status='fully_approved', ama_head_remarks='go' where id=$RID;"
+expect_err "Only the Asset Management" run_as dan@bank.com "update public.movement_requests set status='fully_approved' where id=$RID;"
+# One AMA approval verifies and authorizes in a single step
+expect_ok run_as amy@bank.com "update public.movement_requests set status='fully_approved', ama_officer_remarks='verified' where id=$RID;"
+expect_eq "4|Amy Ama|4|Amy Ama|verified" $P -c "select ama_officer_approved_by, ama_officer_name, ama_head_approved_by, ama_head_name, ama_head_remarks from public.movement_requests where id=$RID"
 expect_eq "transport|pending_assignment" $P -c "select fulfillment_type,status from public.transport_tasks where movement_request_id=$RID"
 TID=$($P -c "select id from public.transport_tasks where movement_request_id=$RID")
 expect_eq "1" run_as tom@bank.com "select count(*) from public.movement_requests;"
@@ -115,6 +116,7 @@ echo "== IT pool isolation"
 expect_ok run_as rita@bank.com "insert into public.movement_requests(reference_no,present_location,new_location,purpose,fulfillment_type) values ('x','DC1','DC2','it-move','it');"
 IID=$($P -c "select id from public.movement_requests where purpose='it-move'")
 expect_ok run_as dan@bank.com "update public.movement_requests set status='head_approved' where id=$IID;"
+# Legacy two-step AMA path still works for requests created by older versions
 expect_ok run_as amy@bank.com "update public.movement_requests set status='ama_officer_approved' where id=$IID;"
 expect_ok run_as amy@bank.com "update public.movement_requests set status='fully_approved' where id=$IID;"
 expect_eq "0" run_as tom@bank.com "select count(*) from public.transport_tasks where movement_request_id=$IID;"

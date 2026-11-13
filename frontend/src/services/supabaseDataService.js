@@ -325,13 +325,19 @@ export const supabaseDataService = {
       updates.head_signature = user?.name || 'Signed Electronically'
       auditAction = 'HEAD_APPROVED'
     } else if (request.status === 'head_approved') {
-      updates.status = 'ama_officer_approved'
+      // One AMA pool member verifies the assets and authorizes the movement.
+      updates.status = 'fully_approved'
       updates.ama_officer_approved_by = numericUserId
-      updates.ama_officer_name = user?.name || 'Asset & Archives Pool'
+      updates.ama_officer_name = user?.name || null
       updates.ama_officer_approved_at = now
       updates.ama_officer_remarks = remarks || null
-      updates.ama_officer_signature = user?.name || 'Verified Electronically'
-      auditAction = 'ASSET_VERIFIED_BY_AMA_POOL'
+      updates.ama_officer_signature = user?.name || null
+      updates.ama_head_approved_by = numericUserId
+      updates.ama_head_name = user?.name || null
+      updates.ama_head_signature = user?.name || null
+      updates.ama_head_approved_at = now
+      updates.ama_head_remarks = remarks || null
+      auditAction = 'AMA_POOL_VERIFIED_AND_AUTHORIZED'
     } else if (request.status === 'ama_officer_approved') {
       updates.status = 'fully_approved'
       updates.ama_head_approved_by = numericUserId

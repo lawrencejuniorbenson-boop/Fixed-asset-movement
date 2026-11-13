@@ -496,7 +496,23 @@ BEGIN
     NEW.head_approved_by := v_uid; NEW.head_approved_name := v_name;
     NEW.head_signature := v_name;  NEW.head_approved_at := now();
 
-  -- Stage 2: AMA verification
+  -- Stage 2: AMA pool verifies the assets AND authorizes the movement in one
+  -- step. Any one AMA pool member (AMA Officer or AMA Head) may do it.
+  ELSIF OLD.status = 'head_approved' AND NEW.status = 'fully_approved' THEN
+    IF NOT (v_admin OR v_ama) THEN
+      RAISE EXCEPTION 'Only the Asset Management & Archives pool can verify and authorize this request.' USING ERRCODE = '42501';
+    END IF;
+    v_allowed := ARRAY['status',
+      'ama_officer_approved_by','ama_officer_name','ama_officer_signature','ama_officer_approved_at','ama_officer_remarks',
+      'ama_head_approved_by','ama_head_name','ama_head_signature','ama_head_approved_at','ama_head_remarks'];
+    NEW.ama_officer_approved_by := v_uid; NEW.ama_officer_name := v_name;
+    NEW.ama_officer_signature := v_name;  NEW.ama_officer_approved_at := now();
+    NEW.ama_head_approved_by := v_uid;    NEW.ama_head_name := v_name;
+    NEW.ama_head_signature := v_name;     NEW.ama_head_approved_at := now();
+    NEW.ama_head_remarks := COALESCE(NEW.ama_head_remarks, NEW.ama_officer_remarks);
+
+  -- Legacy two-step AMA flow (older app versions and requests already
+  -- waiting at 'ama_officer_approved'). Kept so those can still finish.
   ELSIF OLD.status = 'head_approved' AND NEW.status = 'ama_officer_approved' THEN
     IF NOT (v_admin OR v_ama) THEN
       RAISE EXCEPTION 'Only the Asset Management & Archives pool can verify this stage.' USING ERRCODE = '42501';
@@ -505,7 +521,6 @@ BEGIN
     NEW.ama_officer_approved_by := v_uid; NEW.ama_officer_name := v_name;
     NEW.ama_officer_signature := v_name;  NEW.ama_officer_approved_at := now();
 
-  -- Stage 3: AMA final authorization
   ELSIF OLD.status = 'ama_officer_approved' AND NEW.status = 'fully_approved' THEN
     IF NOT (v_admin OR v_ama) THEN
       RAISE EXCEPTION 'Only the Asset Management & Archives pool can authorize this stage.' USING ERRCODE = '42501';
