@@ -16,7 +16,7 @@ import {
   Layers,
   ChevronRight
 } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, errorText } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 
 export default function LoginPage() {
@@ -58,7 +58,7 @@ export default function LoginPage() {
         toast.success(`Welcome back, ${authUser?.name || 'Officer'}!`)
         navigate('/dashboard')
       } catch (err) {
-        setError(err.message || 'Invalid email or password.')
+        setError(errorText(err, 'Invalid email or password.'))
       } finally {
         setLoading(false)
       }
@@ -87,7 +87,7 @@ export default function LoginPage() {
           navigate('/dashboard')
         }
       } catch (err) {
-        setError(err.message || 'Registration failed.')
+        setError(errorText(err, 'Registration failed.'))
       } finally {
         setLoading(false)
       }

@@ -29,6 +29,22 @@ async function fetchProfile(supabase, authUserId) {
   return data ? toAppUser(data) : null
 }
 
+// Turn any thrown value (Error, Supabase error, Axios error, Vercel error
+// object) into readable text, so the UI never shows "[object Object]".
+export function errorText(err, fallback = 'Something went wrong. Please try again.') {
+  const candidates = [
+    err?.response?.data?.error,
+    err?.response?.data?.message,
+    err?.message,
+    err
+  ]
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c
+    if (c && typeof c === 'object' && typeof c.message === 'string' && c.message.trim()) return c.message
+  }
+  return fallback
+}
+
 function cacheUser(u) {
   // Cache is for display/routing only. Authorization is enforced by the
   // database (RLS) for Supabase, and by the JWT for the local backend.
@@ -128,7 +144,14 @@ export function AuthProvider({ children }) {
     try {
       res = await api.post('/auth/login', { email: trimmedEmail, password })
     } catch (err) {
-      throw new Error(err.response?.data?.error || 'Sign-in failed. Is the local backend running?')
+      const status = err.response?.status
+      if (!status || status >= 500) {
+        throw new Error(
+          'The sign-in service is unavailable. Supabase is not configured for this site ' +
+          '(VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY) and the API server did not respond correctly.'
+        )
+      }
+      throw new Error(errorText(err, 'Invalid email or password.'))
     }
     const payload = res.data?.data || res.data
     if (!payload?.user || !payload?.token) throw new Error('Invalid email or password.')
