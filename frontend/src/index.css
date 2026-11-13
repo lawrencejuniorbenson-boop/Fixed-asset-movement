@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Clean & calm: white surfaces, one blue accent, readable 14px text,
+/* Brand: blue-black (navy), royal blue and white. Readable 14px text,
    sentence-case labels, quiet borders. */
 @layer base {
   html {
@@ -25,7 +25,10 @@
     @apply btn bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 shadow-sm;
   }
   .btn-navy {
-    @apply btn bg-slate-900 text-white hover:bg-slate-800;
+    @apply btn bg-navy-900 text-white hover:bg-navy-800;
+  }
+  .btn-light {
+    @apply btn bg-white text-navy-900 hover:bg-blue-50 shadow-sm;
   }
   .btn-secondary {
     @apply btn bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 hover:text-slate-900;
@@ -49,19 +52,19 @@
     @apply mt-1 text-xs text-slate-500;
   }
   .card {
-    @apply rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6;
+    @apply rounded-xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-6;
   }
   .card-flat {
-    @apply rounded-xl border border-slate-200 bg-white;
+    @apply rounded-xl border border-slate-200/80 bg-white shadow-card;
   }
   .page-title {
-    @apply text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl;
+    @apply text-xl font-semibold tracking-tight text-navy-900 sm:text-2xl;
   }
   .page-subtitle {
     @apply mt-1 text-sm text-slate-500;
   }
   .section-title {
-    @apply text-base font-semibold text-slate-900;
+    @apply text-base font-semibold text-navy-900;
   }
   .badge {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap;

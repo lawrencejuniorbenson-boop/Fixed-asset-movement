@@ -43,7 +43,7 @@ function ActingAsSwitcher({ compact = false }) {
 
   return (
     <label className="block">
-      {!compact && <span className="mb-1 block text-xs font-medium text-slate-500">Acting as</span>}
+      {!compact && <span className="mb-1 block text-xs font-medium text-blue-200/70">Acting as</span>}
       <select
         value={user?.id ?? ''}
         onChange={onChange}
@@ -80,18 +80,18 @@ export default function Layout({ children }) {
   const isActive = (item) => (item.match ? item.match(location.pathname) : location.pathname === item.to)
 
   const sidebar = (
-    <div className="flex h-full flex-col bg-white">
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white">
+    <div className="flex h-full flex-col bg-navy-950 text-white">
+      <div className="flex items-center gap-2.5 border-b border-white/10 px-5 py-5">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500 text-white shadow-lg shadow-blue-500/30">
           <Boxes className="h-5 w-5" aria-hidden="true" />
         </div>
         <div className="leading-tight">
-          <p className="text-sm font-semibold text-slate-900">Asset Movement</p>
-          <p className="text-xs text-slate-500">Fixed asset register</p>
+          <p className="text-sm font-semibold text-white">Asset Movement</p>
+          <p className="text-xs text-blue-200/70">Fixed asset register</p>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2" aria-label="Main">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Main">
         {items.map((item) => {
           const active = isActive(item)
           return (
@@ -99,33 +99,33 @@ export default function Layout({ children }) {
               key={item.to}
               to={item.to}
               aria-current={active ? 'page' : undefined}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                active ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                active ? 'bg-blue-600 text-white shadow-md shadow-blue-900/40' : 'text-blue-100/75 hover:bg-white/10 hover:text-white'
               }`}
             >
-              <item.icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-blue-600' : 'text-slate-400'}`} aria-hidden="true" />
+              <item.icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-white' : 'text-blue-200/60'}`} aria-hidden="true" />
               {item.label}
             </NavLink>
           )
         })}
       </nav>
 
-      <div className="border-t border-slate-200 p-4">
+      <div className="border-t border-white/10 p-4">
         {openMode ? (
           <ActingAsSwitcher />
         ) : (
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">
               {user?.name?.charAt(0) || <UserRound className="h-4 w-4" />}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-slate-900">{user?.name}</p>
-              <p className="truncate text-xs text-slate-500">{roleLabel(user?.role)}</p>
+              <p className="truncate text-sm font-medium text-white">{user?.name}</p>
+              <p className="truncate text-xs text-blue-200/70">{roleLabel(user?.role)}</p>
             </div>
             <button
               type="button"
               onClick={async () => { await logout(); navigate('/login') }}
-              className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              className="rounded-lg p-2 text-blue-200/70 hover:bg-white/10 hover:text-white"
               title="Sign out"
               aria-label="Sign out"
             >
@@ -148,7 +148,7 @@ export default function Layout({ children }) {
 
       <div className="flex flex-1">
         {/* Desktop sidebar */}
-        <aside className="hidden w-60 shrink-0 border-r border-slate-200 bg-white lg:block print:hidden">
+        <aside className="hidden w-60 shrink-0 bg-navy-950 lg:block print:hidden">
           <div className="sticky top-0 h-screen">{sidebar}</div>
         </aside>
 
@@ -160,7 +160,7 @@ export default function Layout({ children }) {
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="absolute right-3 top-5 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                className="absolute right-3 top-5 z-10 rounded-lg p-1.5 text-blue-100 hover:bg-white/10"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />
@@ -172,18 +172,18 @@ export default function Layout({ children }) {
 
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Mobile top bar */}
-          <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white/95 px-4 py-2.5 backdrop-blur lg:hidden print:hidden">
+          <header className="sticky top-0 z-30 flex items-center gap-3 bg-navy-950 px-4 py-2.5 text-white lg:hidden print:hidden">
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="-ml-1 rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+              className="-ml-1 rounded-lg p-2 text-blue-100 hover:bg-white/10"
               aria-label="Open menu"
             >
               <Menu className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900">{user?.name}</p>
-              <p className="truncate text-xs text-slate-500">{roleLabel(user?.role)}</p>
+              <p className="truncate text-sm font-semibold text-white">{user?.name}</p>
+              <p className="truncate text-xs text-blue-200/70">{roleLabel(user?.role)}</p>
             </div>
             {openMode && (
               <div className="w-40 shrink-0">

@@ -20,11 +20,12 @@ function greeting() {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }
 
+// Brand: royal blue accents on white, blue-black numbers.
 const TONES = {
-  blue: { chip: 'bg-blue-50 text-blue-600', label: 'text-blue-700' },
-  amber: { chip: 'bg-amber-50 text-amber-600', label: 'text-amber-700' },
-  sky: { chip: 'bg-sky-50 text-sky-600', label: 'text-sky-700' },
-  green: { chip: 'bg-emerald-50 text-emerald-600', label: 'text-emerald-700' }
+  blue: { chip: 'bg-blue-600 text-white', label: 'text-slate-600' },
+  amber: { chip: 'bg-blue-50 text-blue-700', label: 'text-slate-600' },
+  sky: { chip: 'bg-blue-50 text-blue-700', label: 'text-slate-600' },
+  green: { chip: 'bg-blue-50 text-blue-700', label: 'text-slate-600' }
 }
 
 function StatCard({ to, icon: Icon, tone, label, value, caption, loading }) {
@@ -32,12 +33,12 @@ function StatCard({ to, icon: Icon, tone, label, value, caption, loading }) {
   return (
     <Link to={to} className="card-flat group block p-4 transition hover:border-slate-300 hover:shadow-sm sm:p-5">
       <div className="flex items-start justify-between gap-3">
-        <p className={`text-[13px] font-semibold ${t.label}`}>{label}</p>
+        <p className={`text-[13px] font-medium ${t.label}`}>{label}</p>
         <span className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:flex ${t.chip}`}>
           <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
         </span>
       </div>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900 sm:text-3xl">{loading ? '–' : value}</p>
+      <p className="mt-1 text-2xl font-bold tabular-nums text-navy-900 sm:text-3xl">{loading ? '–' : value}</p>
       <p className="mt-1 text-xs text-slate-500">{caption}</p>
     </Link>
   )
@@ -172,25 +173,27 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Welcome */}
-      <div className="card flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-4">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-            <Boxes className="h-6 w-6" aria-hidden="true" />
-          </span>
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900 sm:text-xl">Fixed Asset Movement</h1>
-            <p className="text-sm text-slate-500">
-              {greeting()}, <strong className="font-medium text-slate-800">{user?.name}</strong>
-              {user?.department ? ` · ${user.department}` : ''}
-            </p>
-            <span className="badge badge-blue mt-1.5">{roleLabel(user?.role)}</span>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-navy-950 via-navy-900 to-blue-900 p-6 text-white shadow-card sm:p-7">
+        <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-blue-500/20 blur-3xl" aria-hidden="true" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white ring-1 ring-white/15">
+              <Boxes className="h-6 w-6" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-sm text-blue-200">{greeting()},</p>
+              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{user?.name}</h1>
+              <p className="mt-0.5 text-sm text-blue-100/80">
+                {roleLabel(user?.role)}{user?.department ? ` · ${user.department}` : ''}
+              </p>
+            </div>
           </div>
+          {canCreateRequest(user) && (
+            <Link to="/requests/new" className="btn-light self-start sm:self-auto">
+              <Plus className="h-4 w-4" aria-hidden="true" /> New movement request
+            </Link>
+          )}
         </div>
-        {canCreateRequest(user) && (
-          <Link to="/requests/new" className="btn-primary self-start sm:self-auto">
-            <Plus className="h-4 w-4" aria-hidden="true" /> New movement request
-          </Link>
-        )}
       </div>
 
       {draft && (
@@ -254,28 +257,6 @@ export default function DashboardPage() {
             <RequestTable requests={todo} actionFor={(r) => r.__action} />
           )}
         </section>
-
-      {/* Recent */}
-      <section className="card-flat min-w-0 overflow-hidden" aria-labelledby="recent-title">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-          <div>
-            <h2 id="recent-title" className="section-title">{requester ? 'My recent requests' : 'Recent requests'}</h2>
-            <p className="text-xs text-slate-500">The latest {Math.min(8, scope.length)} of {scope.length}</p>
-          </div>
-          <Link to="/requests" className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:text-blue-800">
-            View all <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          </Link>
-        </div>
-        {loading ? (
-          <LoadingSkeleton rows={4} />
-        ) : (
-          <RequestTable
-            requests={scope.slice(0, 8)}
-            showRequester={!requester}
-            empty={canCreateRequest(user) ? 'No requests yet. Start one with “New movement request”.' : 'No requests to show.'}
-          />
-        )}
-      </section>
 
       {!loading && isAdmin(user) && (
         <p className="flex items-center gap-2 text-xs text-slate-400">
